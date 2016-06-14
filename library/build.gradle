@@ -1,52 +1,95 @@
 apply plugin: 'com.android.library'
-apply plugin: 'com.google.gms.google-services'
 
 android {
-    compileSdkVersion 22
-    buildToolsVersion "22.0.1"
+    compileSdkVersion 23
+    buildToolsVersion "${project.ext.buildtools}"
 
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 22
+        targetSdkVersion 23
         versionCode 1
         versionName "0.3.1"
     }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            }
-    }
-    packagingOptions {
-        exclude 'META-INF/LICENSE'
-        exclude 'META-INF/LICENSE-FIREBASE.txt'
-        exclude 'META-INF/NOTICE'
-    }
-}
-android.libraryVariants.all { variant ->
-    task("generate${variant.name.capitalize()}Javadoc", type: Javadoc) {
-        description "Generates Javadoc for $variant.name."
-        source = variant.javaCompile.source
-        ext.androidJar = "${android.sdkDirectory}/platforms/${android.compileSdkVersion}/android.jar"
-        classpath = files(variant.javaCompile.classpath.files) + files(ext.androidJar)
-        options.links("http://docs.oracle.com/javase/7/docs/api/");
-        options.links("http://d.android.com/reference/");
-    }
-    task("bundle${variant.name.capitalize()}Javadoc", type: Jar) {
-        description "Bundles Javadoc into zip for $variant.name."
-        classifier = "javadoc"
-        destinationDir = file("build/outputs")
-        from tasks["generate${variant.name.capitalize()}Javadoc"]
+        }
     }
 }
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
-    compile 'com.android.support:appcompat-v7:22.2.0'
-    compile 'com.firebase:firebase-client-android:2.3.1'
-    compile 'com.android.support:recyclerview-v7:22.2.0'
-    compile 'com.google.android.gms:play-services-auth:8.3.0'
-    compile 'com.facebook.android:facebook-android-sdk:4.6.0'
-    compile 'org.twitter4j:twitter4j-core:4.0.2'
+    compile project(':database')
+    compile project(':auth')
+
     androidTestCompile 'junit:junit:4.12'
+}
+
+/**
+ * Returns list of tasks names that prepareArtfacts should depend on.
+ */
+def prepareArtifactsTasks() {
+    return project.ext.submodules.collect { name ->
+        ":${name}:prepareArtifacts"
+    }.toArray()
+}
+
+/**
+ * Returns list of publish tasks that monolith publish tasks should depend on.
+ * @param repo relevant repository, such as 'MavenLocal' or 'CustomLocalRepository'
+ */
+def publishToRepoTasks(repo) {
+    return project.ext.submodules.collect { name ->
+        // Ex: name = database, repo = MavenLocal
+        // Return: :database:publishDatabaseLibraryPublicationToMavenLocal
+        ":${name}:publish${name.capitalize()}LibraryPublicationTo${repo}"
+    }.toArray()
+}
+
+/**
+ * Returns a list of task names to upload modules to bintray.
+ */
+def bintrayUploadTasks() {
+    return project.ext.submodules.collect { name ->
+        ":${name}:bintrayUpload"
+    }.toArray()
+}
+
+/**
+ * Prepare artifacts for this an all sub-projects.
+ */
+task prepareArtifacts(dependsOn: [
+        javadocJar,
+        sourcesJar,
+        assembleRelease,
+        prepareArtifactsTasks(),
+        "generatePomFileForMonolithLibraryPublication"]) {
+}
+
+/**
+ * Publish all artifacts to the maven local repository.
+ */
+task publishAllToMavenLocal(dependsOn: [
+        'publishMonolithLibraryPublicationToMavenLocal',
+        publishToRepoTasks('MavenLocal')]) {
+
+}
+
+/**
+ * Publish all artifacts to the customLocal repository.
+ */
+task publishAllToCustomLocal(dependsOn: [
+        'publishMonolithLibraryPublicationToCustomLocalRepository',
+        publishToRepoTasks('CustomLocalRepository')]) {
+
+}
+
+/**
+ * Upload all artifacts to bintray.
+ */
+task bintrayUploadAll(dependsOn: [
+        'bintrayUpload',
+        bintrayUploadTasks()]) {
+
 }
