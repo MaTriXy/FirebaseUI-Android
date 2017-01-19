@@ -1,11 +1,7 @@
 .gradle
-gradle.properties
+*.iml
 /local.properties
 .idea
 .DS_Store
-/build
-/captures
-/library/target
-/**/*.iml
+build
 google-services.json
-build/

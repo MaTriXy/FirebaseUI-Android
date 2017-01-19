@@ -2,13 +2,13 @@
 
 [![Build Status](https://travis-ci.org/firebase/FirebaseUI-Android.svg?branch=master)](https://travis-ci.org/firebase/FirebaseUI-Android)
 
-FirebaseUI is an open-source library for Android that allows you to 
-quickly connect common UI elements to [Firebase](https://firebase.google.com) 
+FirebaseUI is an open-source library for Android that allows you to
+quickly connect common UI elements to [Firebase](https://firebase.google.com)
 APIs like the Realtime Database or Firebase Authentication.
 
 A compatible FirebaseUI client is also available for [iOS](https://github.com/firebase/firebaseui-ios).
 
-## Table of Content
+## Table of Contents
 
   1. [Installation](#installation)
   1. [Usage](#usage)
@@ -18,32 +18,73 @@ A compatible FirebaseUI client is also available for [iOS](https://github.com/fi
 ## Installation
 
 FirebaseUI is published as a collection of libraries separated by the
-Firebase API they target. Each FirebaseUI library has a transitive 
+Firebase API they target. Each FirebaseUI library has a transitive
 dependency on the appropriate Firebase SDK so there is no need to include
 those separately in your app.
 
 In your `app/build.gradle` file add a dependency on one of the FirebaseUI
 libraries.
 
-```
+```groovy
 dependencies {
-    # Single target that includes all FirebaseUI libraries
-    compile 'com.firebaseui:firebase-ui:0.4.1'
-    
-    # FirebaseUI Database only
-    compile 'com.firebaseui:firebase-ui-database:0.4.1'
-    
-    # FirebaseUI Auth only
-    compile 'com.firebaseui:firebase-ui-auth:0.4.1'
+    // FirebaseUI Database only
+    compile 'com.firebaseui:firebase-ui-database:1.1.1'
+
+    // FirebaseUI Auth only
+    compile 'com.firebaseui:firebase-ui-auth:1.1.1'
+
+    // FirebaseUI Storage only
+    compile 'com.firebaseui:firebase-ui-storage:1.1.1'
+
+    // Single target that includes all FirebaseUI libraries above
+    compile 'com.firebaseui:firebase-ui:1.1.1'
 }
 ```
 
 After the project is synchronized, we're ready to start using Firebase functionality in our app.
 
+### Compatibility with Firebase / Google Play Services Libraries
+
+FirebaseUI libraries have the following transitive dependencies on the Firebase SDK:
+```
+firebase-ui-auth
+|--- com.google.firebase:firebase-auth
+|--- com.google.android.gms:play-services-auth
+
+firebase-ui-database
+|--- com.google.firebase:firebase-database
+
+firebase-ui-storage
+|--- com.google.firebase:firebase-storage
+```
+
+Each version of FirebaseUI has dependency on a fixed version of these libraries, defined as the variable `firebase_version`
+in `common/constants.gradle`.  If you are using any dependencies in your app of the form
+`compile 'com.google.firebase:firebase-*:x.y.z'` or `compile 'com.google.android.gms:play-services-*:x.y.z'`
+you need to make sure that you use the same version that your chosen version of FirebaseUI requires.
+
+For convenience, here are some examples:
+
+| FirebaseUI Version | Firebase/Play Services Version |
+|--------------------|--------------------------------|
+| 1.1.1              | 10.0.0 or 10.0.1               |
+| 1.0.1              | 10.0.0 or 10.0.1               |
+| 1.0.0              | 9.8.0                          |
+| 0.6.2              | 9.8.0                          |
+| 0.6.1              | 9.6.1                          |
+| 0.6.0              | 9.6.0                          |
+| 0.5.3              | 9.4.0                          |
+| 0.4.4              | 9.4.0                          |
+| 0.4.3              | 9.2.1                          |
+| 0.4.2              | 9.2.0                          |
+| 0.4.1              | 9.0.2                          |
+| 0.4.0              | 9.0.0                          |
+
 ## Usage
 
   * [firebase-ui-database](database/README.md)
   * [firebase-ui-auth](auth/README.md)
+  * [firebase-ui-storage](storage/README.md)
 
 ## Sample App
 
@@ -66,10 +107,11 @@ To deploy FirebaseUI to Bintray
 
   1. Set `BINTRAY_USER` and `BINTRAY_KEY` in your environment. You must
      be a member of the firebaseui Bintray organization.
-  1. Run `./gradlew :library:prepareArtifacts :library:bintrayUploadAll`
-  1. Go to the Bintray dashboard and click 'Publish'
+  1. Run `./gradlew clean :library:prepareArtifacts :library:bintrayUploadAll`
+  1. Go to the Bintray dashboard and click 'Publish'.
+    1. In Bintray click the 'Maven Central' tab and publish the release.
 
-### Tag a release on Github
+### Tag a release on GitHub
 
 * Ensure that all your changes are on master and that your local build is on master
 * Ensure that the correct version number is in `common/constants.gradle`
@@ -103,4 +145,4 @@ accept your pull requests.
 1. Ensure that your code adheres to the existing style of the library to which
    you are contributing.
 1. Ensure that your code has an appropriate set of unit tests which all pass.
-1. Submit a pull request and cc @puf or @mcdonamp
+1. Submit a pull request and cc @puf or @samtstern

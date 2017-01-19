@@ -14,14 +14,11 @@
 
 package com.firebase.ui.auth;
 
-import static junit.framework.Assert.assertEquals;
-
-import android.content.Intent;
-
-import com.firebase.ui.auth.test_helpers.CustomRobolectricGradleTestRunner;
-import com.firebase.ui.auth.test_helpers.TestConstants;
-import com.firebase.ui.auth.test_helpers.TestHelper;
-import com.firebase.ui.auth.ui.ExtraConstants;
+import com.firebase.ui.auth.AuthUI.IdpConfig;
+import com.firebase.ui.auth.AuthUI.SignInIntentBuilder;
+import com.firebase.ui.auth.testhelpers.CustomRobolectricGradleTestRunner;
+import com.firebase.ui.auth.testhelpers.TestConstants;
+import com.firebase.ui.auth.testhelpers.TestHelper;
 import com.firebase.ui.auth.ui.FlowParameters;
 import com.google.firebase.FirebaseApp;
 
@@ -31,8 +28,12 @@ import org.junit.runner.RunWith;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
+import java.util.Arrays;
+
+import static junit.framework.Assert.assertEquals;
+
 @RunWith(CustomRobolectricGradleTestRunner.class)
-@Config(constants = BuildConfig.class, sdk = 21)
+@Config(constants = BuildConfig.class, sdk = 25)
 public class AuthUITest {
     private FirebaseApp mFirebaseApp;
 
@@ -42,18 +43,47 @@ public class AuthUITest {
     }
 
     @Test
+    public void testCreateStartIntent_deprecatedSetProvidersShouldStillWork() {
+        FlowParameters flowParameters = AuthUI
+                .getInstance(mFirebaseApp)
+                .createSignInIntentBuilder()
+                .setProviders(new String[]{AuthUI.EMAIL_PROVIDER, AuthUI.TWITTER_PROVIDER})
+                .getFlowParams();
+        assertEquals(2, flowParameters.providerInfo.size());
+        assertEquals(AuthUI.EMAIL_PROVIDER, flowParameters.providerInfo.get(0).getProviderId());
+    }
+
+    @Test
+    public void testCreateStartIntent_shouldHaveEmailAsDefaultProvider() {
+        FlowParameters flowParameters = AuthUI
+                .getInstance(mFirebaseApp)
+                .createSignInIntentBuilder()
+                .getFlowParams();
+        assertEquals(1, flowParameters.providerInfo.size());
+        assertEquals(AuthUI.EMAIL_PROVIDER, flowParameters.providerInfo.get(0).getProviderId());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testCreateStartIntent_shouldOnlyAllowOneInstanceOfAnIdp() {
+        SignInIntentBuilder startIntent =
+                AuthUI.getInstance(mFirebaseApp).createSignInIntentBuilder();
+        startIntent.setProviders(
+                Arrays.asList(new IdpConfig.Builder(AuthUI.EMAIL_PROVIDER).build(),
+                              new IdpConfig.Builder(AuthUI.EMAIL_PROVIDER).build()));
+    }
+
+    @Test
     public void testCreatingStartIntent() {
-        Intent startIntent = AuthUI.getInstance(mFirebaseApp).createSignInIntentBuilder()
-                .setProviders(AuthUI.EMAIL_PROVIDER, AuthUI.GOOGLE_PROVIDER)
+        FlowParameters flowParameters = AuthUI.getInstance(mFirebaseApp).createSignInIntentBuilder()
+                .setProviders(Arrays.asList(new IdpConfig.Builder(AuthUI.EMAIL_PROVIDER).build(),
+                                            new IdpConfig.Builder(AuthUI.GOOGLE_PROVIDER).build(),
+                                            new IdpConfig.Builder(AuthUI.FACEBOOK_PROVIDER).build()))
                 .setTosUrl(TestConstants.TOS_URL)
-                .build();
+                .getFlowParams();
 
-        FlowParameters flowParameters = startIntent.getParcelableExtra(
-                ExtraConstants.EXTRA_FLOW_PARAMS);
-
-        assertEquals(flowParameters.providerInfo.size(), 2);
-        assertEquals(flowParameters.appName, mFirebaseApp.getName());
-        assertEquals(flowParameters.termsOfServiceUrl, TestConstants.TOS_URL);
-        assertEquals(flowParameters.themeId, AuthUI.getDefaultTheme());
+        assertEquals(3, flowParameters.providerInfo.size());
+        assertEquals(mFirebaseApp.getName(), flowParameters.appName);
+        assertEquals(TestConstants.TOS_URL, flowParameters.termsOfServiceUrl);
+        assertEquals(AuthUI.getDefaultTheme(), flowParameters.themeId);
     }
 }

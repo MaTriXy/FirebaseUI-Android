@@ -16,201 +16,123 @@ package com.firebase.ui.auth.ui.email;
 
 import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.design.widget.TextInputLayout;
-import android.support.v4.content.ContextCompat;
-import android.text.SpannableStringBuilder;
-import android.text.style.ForegroundColorSpan;
-import android.util.TypedValue;
+import android.support.annotation.RestrictTo;
+import android.support.v4.app.FragmentTransaction;
 import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.ImageView;
-import android.widget.TextView;
 
+import com.firebase.ui.auth.IdpResponse;
 import com.firebase.ui.auth.R;
-import com.firebase.ui.auth.ui.ActivityHelper;
 import com.firebase.ui.auth.ui.AppCompatBase;
+import com.firebase.ui.auth.ui.BaseHelper;
 import com.firebase.ui.auth.ui.ExtraConstants;
 import com.firebase.ui.auth.ui.FlowParameters;
-import com.firebase.ui.auth.ui.TaskFailureLogger;
-import com.firebase.ui.auth.ui.account_link.SaveCredentialsActivity;
-import com.firebase.ui.auth.ui.email.field_validators.EmailFieldValidator;
-import com.firebase.ui.auth.ui.email.field_validators.PasswordFieldValidator;
-import com.firebase.ui.auth.ui.email.field_validators.RequiredFieldValidator;
-import com.firebase.ui.auth.util.FirebaseAuthWrapperFactory;
-import com.google.android.gms.tasks.OnCompleteListener;
-import com.google.android.gms.tasks.Task;
-import com.google.firebase.auth.AuthResult;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.auth.UserProfileChangeRequest;
+import com.firebase.ui.auth.ui.User;
+import com.firebase.ui.auth.ui.accountlink.WelcomeBackIdpPrompt;
+import com.firebase.ui.auth.ui.accountlink.WelcomeBackPasswordPrompt;
+import com.google.firebase.auth.EmailAuthProvider;
 
-public class RegisterEmailActivity extends AppCompatBase implements View.OnClickListener {
-    private static final int RC_SAVE_CREDENTIAL = 3;
-    private static final String TAG = "RegisterEmailActivity";
-    private EditText mEmailEditText;
-    private EditText mPasswordEditText;
-    private EditText mNameEditText;
-    private EmailFieldValidator mEmailFieldValidator;
-    private PasswordFieldValidator mPasswordFieldValidator;
-    private RequiredFieldValidator mNameValidator;
-    private ImageView mTogglePasswordImage;
+/**
+ * Activity to control the entire email sign up flow. Plays host to {@link CheckEmailFragment}
+ * and {@link RegisterEmailFragment} and triggers {@link WelcomeBackPasswordPrompt}
+ * and {@link WelcomeBackIdpPrompt}.
+ */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public class RegisterEmailActivity extends AppCompatBase implements
+        CheckEmailFragment.CheckEmailListener {
+
+    private static final int RC_SIGN_IN = 17;
+    private static final int RC_WELCOME_BACK_IDP = 18;
+
+    public static Intent createIntent(Context context, FlowParameters flowParams) {
+        return createIntent(context, flowParams, null);
+    }
+
+    public static Intent createIntent(Context context, FlowParameters flowParams, String email) {
+        return BaseHelper.createBaseIntent(context, RegisterEmailActivity.class, flowParams)
+                .putExtra(ExtraConstants.EXTRA_EMAIL, email);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTitle(R.string.create_account_title);
-        setContentView(R.layout.register_email_layout);
+        setContentView(R.layout.activity_register_email);
 
-        String email = getIntent().getStringExtra(ExtraConstants.EXTRA_EMAIL);
-        mEmailEditText = (EditText) findViewById(R.id.email);
-
-        TypedValue visibleIcon = new TypedValue();
-        TypedValue slightlyVisibleIcon = new TypedValue();
-
-        getResources().getValue(R.dimen.visible_icon, visibleIcon, true);
-        getResources().getValue(R.dimen.slightly_visible_icon, slightlyVisibleIcon, true);
-
-        mPasswordEditText = (EditText) findViewById(R.id.password);
-        mTogglePasswordImage = (ImageView) findViewById(R.id.toggle_visibility);
-
-        mPasswordEditText.setOnFocusChangeListener(new ImageFocusTransparencyChanger(
-                mTogglePasswordImage,
-                visibleIcon.getFloat(),
-                slightlyVisibleIcon.getFloat()));
-
-        mTogglePasswordImage.setOnClickListener(new PasswordToggler(mPasswordEditText));
-
-        mNameEditText = (EditText) findViewById(R.id.name);
-
-        mPasswordFieldValidator = new PasswordFieldValidator((TextInputLayout)
-                findViewById(R.id.password_layout),
-                getResources().getInteger(R.integer.min_password_length));
-        mNameValidator = new RequiredFieldValidator((TextInputLayout)
-                findViewById(R.id.name_layout));
-        mEmailFieldValidator = new EmailFieldValidator((TextInputLayout) findViewById(R.id
-                .email_layout));
-
-        if (email != null) {
-            mEmailEditText.setText(email);
-            mEmailEditText.setEnabled(false);
-        }
-        setUpTermsOfService();
-        Button createButton = (Button) findViewById(R.id.button_create);
-        createButton.setOnClickListener(this);
-    }
-
-    private void setUpTermsOfService() {
-        if (mActivityHelper.getFlowParams().termsOfServiceUrl == null) {
+        if (savedInstanceState != null) {
             return;
         }
-        ForegroundColorSpan foregroundColorSpan = new ForegroundColorSpan(ContextCompat.getColor
-                (getApplicationContext(), R.color.linkColor));
 
-        String preamble = getResources().getString(R.string.create_account_preamble);
-        String link = getResources().getString(R.string.terms_of_service);
-        SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder(preamble + link);
-        int start = preamble.length();
-        spannableStringBuilder.setSpan(foregroundColorSpan, start, start + link.length(), 0);
-        TextView agreementText = (TextView) findViewById(R.id.create_account_text);
-        agreementText.setText(spannableStringBuilder);
-        agreementText.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Intent intent = new Intent(Intent.ACTION_VIEW).setData(Uri.parse
-                        (mActivityHelper.getFlowParams().termsOfServiceUrl));
-                startActivity(intent);
-            }
-        });
+        // Get email from intent (can be null)
+        String email = getIntent().getExtras().getString(ExtraConstants.EXTRA_EMAIL);
+
+        // Start with check email
+        CheckEmailFragment fragment = CheckEmailFragment.getInstance(
+                mActivityHelper.getFlowParams(), email);
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.fragment_register_email, fragment, CheckEmailFragment.TAG)
+                .disallowAddToBackStack()
+                .commit();
     }
 
-    private void startSaveCredentials(FirebaseUser firebaseUser, String password) {
-        if (FirebaseAuthWrapperFactory.getFirebaseAuthWrapper(mActivityHelper.getFlowParams().appName)
-                .isPlayServicesAvailable(this)) {
-            Intent saveCredentialIntent = SaveCredentialsActivity.createIntent(
-                    this,
-                    mActivityHelper.getFlowParams(),
-                    firebaseUser.getDisplayName(),
-                    firebaseUser.getEmail(),
-                    password,
-                    null,
-                    null);
-            startActivityForResult(saveCredentialIntent, RC_SAVE_CREDENTIAL);
-        }
-    }
-
-    private void registerUser(String email, final String name, final String password) {
-        final FirebaseAuth firebaseAuth = mActivityHelper.getFirebaseAuth();
-        // create the user
-        firebaseAuth.createUserWithEmailAndPassword(email, password)
-                .addOnFailureListener(new TaskFailureLogger(TAG, "Error creating user"))
-                .addOnCompleteListener(new OnCompleteListener<AuthResult>() {
-                    @Override
-                    public void onComplete(@NonNull Task<AuthResult> task) {
-                        if (task.isSuccessful()) {
-                            final FirebaseUser firebaseUser = task.getResult().getUser();
-                            Task<Void> updateTask = firebaseUser.updateProfile(
-                                    new UserProfileChangeRequest
-                                            .Builder()
-                                            .setDisplayName(name).build());
-                            updateTask
-                                    .addOnFailureListener(new TaskFailureLogger(
-                                            TAG, "Error setting display name"))
-                                    .addOnCompleteListener(new OnCompleteListener<Void>() {
-                                        @Override
-                                        public void onComplete(@NonNull Task<Void> task) {
-                                            mActivityHelper.dismissDialog();
-                                            if (task.isSuccessful()) {
-                                                startSaveCredentials(firebaseUser, password);
-                                            }
-                                        }
-                                    });
-                        } else {
-                            mActivityHelper.dismissDialog();
-                            String errorMessage = task.getException().getLocalizedMessage();
-                            errorMessage = errorMessage.substring(errorMessage.indexOf(":") + 1);
-                            TextInputLayout emailInput =
-                                    (TextInputLayout) findViewById(R.id.email_layout);
-                            emailInput.setError(errorMessage);
-                        }
-                    }
-                });
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        outState.putBoolean(ExtraConstants.HAS_EXISTING_INSTANCE, true);
+        super.onSaveInstanceState(outState);
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == RC_SAVE_CREDENTIAL) {
-            finish(RESULT_OK, new Intent());
+        switch (requestCode) {
+            case RC_SIGN_IN:
+            case RC_WELCOME_BACK_IDP:
+                finish(resultCode, data);
         }
     }
 
     @Override
-    public void onClick(View view) {
-        if (view.getId() == R.id.button_create) {
-            String email = mEmailEditText.getText().toString();
-            String password = mPasswordEditText.getText().toString();
-            String name = mNameEditText.getText().toString();
+    public void onExistingEmailUser(User user) {
+        // Existing email user, direct them to sign in with their password.
+        startActivityForResult(
+                WelcomeBackPasswordPrompt.createIntent(
+                        this,
+                        mActivityHelper.getFlowParams(),
+                        new IdpResponse(EmailAuthProvider.PROVIDER_ID, user.getEmail())),
+                RC_SIGN_IN);
 
-            boolean emailValid = mEmailFieldValidator.validate(email);
-            boolean passwordValid = mPasswordFieldValidator.validate(password);
-            boolean nameValid = mNameValidator.validate(name);
-            if (emailValid && passwordValid && nameValid) {
-                mActivityHelper.showLoadingDialog(R.string.progress_dialog_signing_up);
-                registerUser(mEmailEditText.getText().toString(), mNameEditText.getText()
-                        .toString(), mPasswordEditText.getText().toString());
-            }
-        }
+        setSlideAnimation();
     }
 
-    public static Intent createIntent(
-            Context context,
-            FlowParameters flowParams,
-            String email) {
-        return ActivityHelper.createBaseIntent(context, RegisterEmailActivity.class, flowParams)
-                .putExtra(ExtraConstants.EXTRA_EMAIL, email);
+    @Override
+    public void onExistingIdpUser(User user) {
+        // Existing social user, direct them to sign in using their chosen provider.
+        Intent intent = WelcomeBackIdpPrompt.createIntent(
+                this,
+                mActivityHelper.getFlowParams(),
+                user,
+                new IdpResponse(EmailAuthProvider.PROVIDER_ID, user.getEmail()));
+        mActivityHelper.startActivityForResult(intent, RC_WELCOME_BACK_IDP);
+
+        setSlideAnimation();
+    }
+
+    @Override
+    public void onNewUser(User user) {
+        // New user, direct them to create an account with email/password.
+        RegisterEmailFragment fragment = RegisterEmailFragment.getInstance(
+                mActivityHelper.getFlowParams(),
+                user);
+        FragmentTransaction ft = getSupportFragmentManager().beginTransaction()
+                .replace(R.id.fragment_register_email, fragment, RegisterEmailFragment.TAG);
+
+        View v = findViewById(R.id.email_layout);
+        if (v != null) ft.addSharedElement(v, "email_field");
+
+        ft.disallowAddToBackStack().commit();
+    }
+
+    private void setSlideAnimation() {
+        // Make the next activity slide in
+        overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left);
     }
 }

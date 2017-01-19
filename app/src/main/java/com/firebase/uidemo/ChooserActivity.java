@@ -26,6 +26,8 @@ import android.widget.ListView;
 import android.widget.TextView;
 
 import com.firebase.uidemo.auth.AuthUiActivity;
+import com.firebase.uidemo.database.ChatActivity;
+import com.firebase.uidemo.storage.ImageActivity;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
@@ -36,16 +38,19 @@ public class ChooserActivity extends AppCompatActivity {
     private static final Class[] CLASSES = new Class[]{
             ChatActivity.class,
             AuthUiActivity.class,
+            ImageActivity.class,
     };
 
     private static final int[] DESCRIPTION_NAMES = new int[] {
             R.string.name_chat,
-            R.string.name_auth_ui
+            R.string.name_auth_ui,
+            R.string.name_image
     };
 
     private static final int[] DESCRIPTION_IDS = new int[] {
             R.string.desc_chat,
-            R.string.desc_auth_ui
+            R.string.desc_auth_ui,
+            R.string.desc_image
     };
 
     @BindView(R.id.list_view)
@@ -72,22 +77,21 @@ public class ChooserActivity extends AppCompatActivity {
     public static class MyArrayAdapter extends ArrayAdapter<Class> {
 
         private Context mContext;
-        private Class[] mClasses;
 
-        public MyArrayAdapter(Context context, int resource, Class[] objects) {
+        public MyArrayAdapter(Context context, int resource, Class... objects) {
             super(context, resource, objects);
-
             mContext = context;
-            mClasses = objects;
         }
 
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {
-            View view = convertView;
+            View view;
 
             if (convertView == null) {
                 LayoutInflater inflater = (LayoutInflater) mContext.getSystemService(LAYOUT_INFLATER_SERVICE);
                 view = inflater.inflate(android.R.layout.simple_list_item_2, null);
+            } else {
+                view = convertView;
             }
 
             ((TextView) view.findViewById(android.R.id.text1)).setText(DESCRIPTION_NAMES[position]);

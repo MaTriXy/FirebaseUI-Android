@@ -1,36 +1,42 @@
 apply plugin: 'com.android.library'
+check.dependsOn 'testAll', 'prepareArtifacts'
 
 android {
-    compileSdkVersion 23
-    buildToolsVersion "${project.ext.buildtools}"
+    compileSdkVersion compileSdk
+    buildToolsVersion buildTools
 
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 23
+        targetSdkVersion targetSdk
         versionCode 1
-        versionName "0.3.1"
+        versionName "0.0.0"
+
+        consumerProguardFiles 'consumer-proguard-rules.txt'
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android.txt')
         }
+    }
+
+    lintOptions {
+        abortOnError false
     }
 }
 
 dependencies {
     compile project(':database')
     compile project(':auth')
-
-    androidTestCompile 'junit:junit:4.12'
+    compile project(':storage')
 }
 
 /**
  * Returns list of tasks names that prepareArtfacts should depend on.
  */
 def prepareArtifactsTasks() {
-    return project.ext.submodules.collect { name ->
+    return submodules.collect { name ->
         ":${name}:prepareArtifacts"
     }.toArray()
 }
@@ -40,7 +46,7 @@ def prepareArtifactsTasks() {
  * @param repo relevant repository, such as 'MavenLocal' or 'CustomLocalRepository'
  */
 def publishToRepoTasks(repo) {
-    return project.ext.submodules.collect { name ->
+    return submodules.collect { name ->
         // Ex: name = database, repo = MavenLocal
         // Return: :database:publishDatabaseLibraryPublicationToMavenLocal
         ":${name}:publish${name.capitalize()}LibraryPublicationTo${repo}"
@@ -51,20 +57,18 @@ def publishToRepoTasks(repo) {
  * Returns a list of task names to upload modules to bintray.
  */
 def bintrayUploadTasks() {
-    return project.ext.submodules.collect { name ->
+    return submodules.collect { name ->
         ":${name}:bintrayUpload"
     }.toArray()
 }
 
 /**
- * Prepare artifacts for this an all sub-projects.
+ * Returns a list of tasks names to test submodules.
  */
-task prepareArtifacts(dependsOn: [
-        javadocJar,
-        sourcesJar,
-        assembleRelease,
-        prepareArtifactsTasks(),
-        "generatePomFileForMonolithLibraryPublication"]) {
+def testTasks() {
+    return submodules.collect { name ->
+        ":${name}:testDebugUnitTest"
+    }.toArray()
 }
 
 /**
@@ -92,4 +96,23 @@ task bintrayUploadAll(dependsOn: [
         'bintrayUpload',
         bintrayUploadTasks()]) {
 
+}
+
+/**
+ * Test all submodules.
+ */
+task testAll(dependsOn: [testTasks()]) {
+}
+
+afterEvaluate {
+    /**
+     * Prepare artifacts for this an all sub-projects.
+     */
+    task prepareArtifacts(dependsOn: [
+            javadocJar,
+            sourcesJar,
+            assembleRelease,
+            prepareArtifactsTasks(),
+            "generatePomFileForMonolithLibraryPublication"]) {
+    }
 }

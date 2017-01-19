@@ -18,9 +18,10 @@ import android.os.Parcelable;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.annotation.RestrictTo;
 import android.support.annotation.StyleRes;
 
-import com.firebase.ui.auth.provider.IDPProviderParcel;
+import com.firebase.ui.auth.AuthUI.IdpConfig;
 import com.firebase.ui.auth.util.Preconditions;
 
 import java.util.List;
@@ -29,13 +30,13 @@ import java.util.List;
  * Encapsulates the core parameters and data captured during the authentication flow, in
  * a serializable manner, in order to pass data between activities.
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class FlowParameters implements Parcelable {
-
     @NonNull
     public final String appName;
 
     @NonNull
-    public final List<IDPProviderParcel> providerInfo;
+    public final List<IdpConfig> providerInfo;
 
     @StyleRes
     public final int themeId;
@@ -46,17 +47,21 @@ public class FlowParameters implements Parcelable {
     @Nullable
     public final String termsOfServiceUrl;
 
+    public final boolean smartLockEnabled;
+
     public FlowParameters(
             @NonNull String appName,
-            @NonNull List<IDPProviderParcel> providerInfo,
+            @NonNull List<IdpConfig> providerInfo,
             @StyleRes int themeId,
             @DrawableRes int logoId,
-            @Nullable String termsOfServiceUrl) {
+            @Nullable String termsOfServiceUrl,
+            boolean smartLockEnabled) {
         this.appName = Preconditions.checkNotNull(appName, "appName cannot be null");
         this.providerInfo = Preconditions.checkNotNull(providerInfo, "providerInfo cannot be null");
         this.themeId = themeId;
         this.logoId = logoId;
         this.termsOfServiceUrl = termsOfServiceUrl;
+        this.smartLockEnabled = smartLockEnabled;
     }
 
     @Override
@@ -66,6 +71,7 @@ public class FlowParameters implements Parcelable {
         dest.writeInt(themeId);
         dest.writeInt(logoId);
         dest.writeString(termsOfServiceUrl);
+        dest.writeInt(smartLockEnabled ? 1 : 0);
     }
 
     @Override
@@ -77,12 +83,20 @@ public class FlowParameters implements Parcelable {
         @Override
         public FlowParameters createFromParcel(Parcel in) {
             String appName = in.readString();
-            List<IDPProviderParcel> providerInfo =
-                    in.createTypedArrayList(IDPProviderParcel.CREATOR);
+            List<IdpConfig> providerInfo = in.createTypedArrayList(IdpConfig.CREATOR);
             int themeId = in.readInt();
             int logoId = in.readInt();
             String termsOfServiceUrl = in.readString();
-            return new FlowParameters(appName, providerInfo, themeId, logoId, termsOfServiceUrl);
+            int smartLockEnabledInt = in.readInt();
+            boolean smartLockEnabled = smartLockEnabledInt != 0;
+
+            return new FlowParameters(
+                    appName,
+                    providerInfo,
+                    themeId,
+                    logoId,
+                    termsOfServiceUrl,
+                    smartLockEnabled);
         }
 
         @Override

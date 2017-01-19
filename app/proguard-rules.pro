@@ -17,6 +17,14 @@
 #}
 
 # See:
-# https://firebase-dot-devsite.googleplex.com/docs/auth/android/start/#proguard
+# https://firebase.google.com/docs/auth/android/start/#proguard
 -keepattributes Signature
 -keepattributes *Annotation*
+
+# See:
+# storage/README.md
+-assumenosideeffects class android.util.Log {
+    public static *** w(...);
+    public static *** d(...);
+    public static *** v(...);
+}

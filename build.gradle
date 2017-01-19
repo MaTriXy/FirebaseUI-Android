@@ -1,16 +1,18 @@
-apply from: 'common/constants.gradle'
+apply from: 'constants.gradle'
 
 buildscript {
     repositories {
         jcenter()
         mavenLocal()
+        maven { url 'https://maven.fabric.io/public' }
     }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:2.1.2'
-        classpath 'com.google.gms:google-services:3.0.0'
 
+    dependencies {
+        classpath 'com.android.tools.build:gradle:2.3.0-beta2'
+        classpath 'com.google.gms:google-services:3.0.0'
+        classpath 'io.fabric.tools:gradle:1.+'
         classpath 'com.neenbedankt.gradle.plugins:android-apt:1.8'
-        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.2'
+        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.7.3'
     }
 }
 
@@ -19,6 +21,7 @@ allprojects {
         jcenter()
         mavenLocal()
         mavenCentral()
+        maven { url 'https://maven.fabric.io/public' }
     }
 }
 
@@ -36,24 +39,20 @@ if (JavaVersion.current().isJava8Compatible()) {
  */
 allprojects { project ->
 
-
     // Get constants, this is where we store things
     // like the list of submodules or the version
-    project.apply from: "$rootDir/common/constants.gradle"
+    project.apply from: "$rootDir/constants.gradle"
 
     def isLibrary = 'library'.equals(project.name)
-    def isSubmodule = project.ext.submodules.contains(project.name)
-
-    // Only applies to submodules, not the library module
-    def pomTask = "generatePomFileFor${project.name.capitalize()}LibraryPublication";
+    def isSubmodule = submodules.contains(project.name)
 
     if (isSubmodule || isLibrary) {
 
         // So that we can resolve 'android' variable
         project.apply plugin: 'com.android.library'
         android {
-            compileSdkVersion 23
-            buildToolsVersion "${project.ext.buildtools}"
+            compileSdkVersion compileSdk
+            buildToolsVersion "${buildTools}"
         }
 
         // Task to generate sources JAR
@@ -108,10 +107,61 @@ allprojects { project ->
         }
     }
 
-    if (isSubmodule) {
-        // Convenience task to prepare everything we need for releases
-        task prepareArtifacts(dependsOn: [javadocJar, sourcesJar, assembleRelease, pomTask]) {}
+    // POM to meet maven specs
+    if (isLibrary || isSubmodule) {
+        def targetName = isLibrary ? 'monolithLibrary' : "${project.name}Library"
 
+        publishing {
+            publications {
+                "${targetName}"(MavenPublication) {
+                    pom.withXml {
+                        // Common values
+                        def repoUrl = 'https://github.com/firebase/FirebaseUI-Android'
+                        def scmUrl = 'scm:git:git@github.com/firebase/firebaseui-android.git'
+
+                        // Name
+                        asNode().appendNode('name', artifactId)
+
+                        // Description
+                        asNode().appendNode('description', 'Firebase UI for Android')
+
+                        // Organization
+                        def organization = asNode().appendNode('organization')
+                        organization.appendNode('name', 'FirebaseUI')
+                        organization.appendNode('url', repoUrl)
+
+                        // URL
+                        asNode().appendNode('url', repoUrl)
+
+                        // SCM
+                        def scm = asNode().appendNode('scm')
+                        scm.appendNode('connection', scmUrl)
+                        scm.appendNode('developerConnection', scmUrl)
+                        scm.appendNode('url', repoUrl)
+                        scm.appendNode('tag', 'HEAD')
+
+                        // Developers
+                        def developer = asNode().appendNode('developers').appendNode('developer')
+                        developer.appendNode('id', 'samtstern')
+                        developer.appendNode('email', 'samstern@google.com')
+                        developer.appendNode('organization', 'Firebase')
+                        developer.appendNode('organizationUrl', 'https://firebase.google.com')
+                        def roles = developer.appendNode('roles')
+                        roles.appendNode('role', 'Project-Administrator')
+                        roles.appendNode('role', 'Developer')
+                        developer.appendNode('timezone', '-8')
+
+                        // Licenses
+                        def license = asNode().appendNode('licenses').appendNode('license')
+                        license.appendNode('name', 'The Apache License, Version 2.0')
+                        license.appendNode('url', 'http://www.apache.org/licenses/LICENSE-2.0.txt')
+                    }
+                }
+            }
+        }
+    }
+
+    if (isSubmodule) {
         publishing {
 
             // Define a publication for each submodule
@@ -119,9 +169,9 @@ allprojects { project ->
 
                 // Ex: authLibrary(MavenPublication)
                 "${project.name}Library"(MavenPublication) {
-                    groupId project.ext.group
+                    groupId group
                     artifactId archivesBaseName
-                    version project.ext.version
+                    version version
 
                     // Release AAR, Sources, and JavaDoc
                     artifact "$buildDir/outputs/aar/$archivesBaseName-release.aar"
@@ -131,7 +181,7 @@ allprojects { project ->
                     pom.withXml {
                         def dependenciesNode = asNode().getAt("dependencies")[0]
                         if (dependenciesNode == null) {
-                            dependenciesNode = asNode().appendNode("dependencies");
+                            dependenciesNode = asNode().appendNode("dependencies")
                         }
 
                         // Add all that are 'compile'
@@ -154,9 +204,9 @@ allprojects { project ->
 
             publications {
                 monolithLibrary(MavenPublication) {
-                    groupId project.ext.group
+                    groupId group
                     artifactId archivesBaseName
-                    version project.ext.version
+                    version version
 
                     artifact "$buildDir/outputs/aar/$archivesBaseName-release.aar"
                     artifact javadocJar
@@ -166,15 +216,15 @@ allprojects { project ->
                     pom.withXml {
                         def dependenciesNode = asNode().getAt("dependencies")[0]
                         if (dependenciesNode == null) {
-                            dependenciesNode = asNode().appendNode("dependencies");
+                            dependenciesNode = asNode().appendNode("dependencies")
                         }
 
                         // Add a maven dependency on each submodule
-                        project.ext.submodules.each { module ->
+                        submodules.each { module ->
                             def dependencyNode = dependenciesNode.appendNode('dependency')
-                            dependencyNode.appendNode('groupId', project.ext.group)
+                            dependencyNode.appendNode('groupId', group)
                             dependencyNode.appendNode('artifactId', "firebase-ui-${module}")
-                            dependencyNode.appendNode('version', project.ext.version)
+                            dependencyNode.appendNode('version', version)
                         }
                     }
                 }
@@ -187,6 +237,7 @@ allprojects { project ->
         project.apply plugin: 'com.jfrog.bintray'
 
         def archivesBaseName = isLibrary ? 'firebase-ui' : "firebase-ui-${project.name}"
+        def publicationName = isLibrary ? 'monolithLibrary' : "${project.name}Library"
         def pomLoc = isLibrary ? "$buildDir/publications/monolithLibrary/pom-default.xml" : "$buildDir/publications/${project.name}Library/pom-default.xml"
 
         group = project.ext.group
@@ -197,22 +248,23 @@ allprojects { project ->
         bintray {
             user = hasProperty('BINTRAY_USER') ? getProperty('BINTRAY_USER') : System.getenv('BINTRAY_USER')
             key = hasProperty('BINTRAY_KEY') ? getProperty('BINTRAY_KEY') : System.getenv('BINTRAY_KEY')
+            publications = [publicationName]
 
             filesSpec {
                 from pomLoc
                 into "com/firebaseui/$archivesBaseName/$versionName/"
                 rename { String fileName ->
-                    "${archivesBaseName}-${project.ext.version}.pom"
+                    "${archivesBaseName}-${version}.pom"
                 }
             }
 
-            configurations = [ 'archives' ]
+            configurations = ['archives']
 
             pkg {
                 repo = 'firebase-ui'
                 name = archivesBaseName
                 userOrg = 'firebaseui'
-                licenses = [ 'Apache-2.0' ]
+                licenses = ['Apache-2.0']
                 vcsUrl = 'https://github.com/firebase/FirebaseUI-Android.git'
 
                 version {
@@ -220,5 +272,20 @@ allprojects { project ->
                 }
             }
         }
+    }
+}
+
+allprojects {
+    afterEvaluate { project ->
+        def isSubmodule = submodules.contains(project.name)
+
+        if (isSubmodule) {
+            // Only applies to submodules, not the library module
+            def pomTask = "generatePomFileFor${project.name.capitalize()}LibraryPublication"
+
+            // Convenience task to prepare everything we need for releases
+            task prepareArtifacts(dependsOn: [javadocJar, sourcesJar, assembleRelease, pomTask]) {}
+        }
+
     }
 }

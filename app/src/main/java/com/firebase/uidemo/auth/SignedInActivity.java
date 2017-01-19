@@ -14,7 +14,6 @@
 
 package com.firebase.uidemo.auth;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -24,6 +23,7 @@ import android.support.annotation.NonNull;
 import android.support.annotation.StringRes;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AlertDialog;
+import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.ImageView;
@@ -31,6 +31,7 @@ import android.widget.TextView;
 
 import com.bumptech.glide.Glide;
 import com.firebase.ui.auth.AuthUI;
+import com.firebase.ui.auth.IdpResponse;
 import com.firebase.uidemo.R;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
@@ -46,8 +47,7 @@ import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 
-public class SignedInActivity extends Activity {
-
+public class SignedInActivity extends AppCompatActivity {
     @BindView(android.R.id.content)
     View mRootView;
 
@@ -63,6 +63,8 @@ public class SignedInActivity extends Activity {
     @BindView(R.id.user_enabled_providers)
     TextView mEnabledProviders;
 
+    private IdpResponse mIdpResponse;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -74,9 +76,12 @@ public class SignedInActivity extends Activity {
             return;
         }
 
+        mIdpResponse = IdpResponse.fromResultIntent(getIntent());
+
         setContentView(R.layout.signed_in_layout);
         ButterKnife.bind(this);
         populateProfile();
+        populateIdpToken();
     }
 
     @OnClick(R.id.sign_out)
@@ -114,9 +119,8 @@ public class SignedInActivity extends Activity {
     }
 
     private void deleteAccount() {
-        FirebaseAuth.getInstance()
-                .getCurrentUser()
-                .delete()
+        AuthUI.getInstance()
+                .delete(this)
                 .addOnCompleteListener(new OnCompleteListener<Void>() {
                     @Override
                     public void onComplete(@NonNull Task<Void> task) {
@@ -145,7 +149,7 @@ public class SignedInActivity extends Activity {
         mUserDisplayName.setText(
                 TextUtils.isEmpty(user.getDisplayName()) ? "No display name" : user.getDisplayName());
 
-        StringBuilder providerList = new StringBuilder();
+        StringBuilder providerList = new StringBuilder(100);
 
         providerList.append("Providers used: ");
 
@@ -174,14 +178,33 @@ public class SignedInActivity extends Activity {
         mEnabledProviders.setText(providerList);
     }
 
+    private void populateIdpToken() {
+        String token = null;
+        String secret = null;
+        if (mIdpResponse != null) {
+            token = mIdpResponse.getIdpToken();
+            secret = mIdpResponse.getIdpSecret();
+        }
+        if (token == null) {
+            findViewById(R.id.idp_token_layout).setVisibility(View.GONE);
+        } else {
+            ((TextView) findViewById(R.id.idp_token)).setText(token);
+        }
+        if (secret == null) {
+            findViewById(R.id.idp_secret_layout).setVisibility(View.GONE);
+        } else {
+            ((TextView) findViewById(R.id.idp_secret)).setText(secret);
+        }
+    }
+
     @MainThread
     private void showSnackbar(@StringRes int errorMessageRes) {
         Snackbar.make(mRootView, errorMessageRes, Snackbar.LENGTH_LONG)
                 .show();
     }
 
-    public static Intent createIntent(Context context) {
-        Intent in = new Intent();
+    public static Intent createIntent(Context context, IdpResponse idpResponse) {
+        Intent in = IdpResponse.getIntent(idpResponse);
         in.setClass(context, SignedInActivity.class);
         return in;
     }
