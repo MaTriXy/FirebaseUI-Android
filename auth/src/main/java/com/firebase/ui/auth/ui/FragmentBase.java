@@ -1,28 +1,37 @@
 package com.firebase.ui.auth.ui;
 
-import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
 import android.support.annotation.RestrictTo;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentActivity;
+
+import com.firebase.ui.auth.IdpResponse;
+import com.firebase.ui.auth.data.model.FlowParameters;
+import com.google.firebase.auth.FirebaseUser;
 
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public class FragmentBase extends Fragment {
-    protected FragmentHelper mHelper;
+public abstract class FragmentBase extends Fragment implements ProgressView {
+    private HelperActivityBase mActivity;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        mHelper = new FragmentHelper(this);
+        FragmentActivity activity = getActivity();
+        if (!(activity instanceof HelperActivityBase)) {
+            throw new IllegalStateException("Cannot use this fragment without the helper activity");
+        }
+        mActivity = (HelperActivityBase) activity;
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        mHelper.dismissDialog();
+    public FlowParameters getFlowParams() {
+        return mActivity.getFlowParams();
     }
 
-    public void finish(int resultCode, Intent resultIntent) {
-        mHelper.finish(resultCode, resultIntent);
+    public void startSaveCredentials(
+            FirebaseUser firebaseUser,
+            IdpResponse response,
+            @Nullable String password) {
+        mActivity.startSaveCredentials(firebaseUser, response, password);
     }
 }

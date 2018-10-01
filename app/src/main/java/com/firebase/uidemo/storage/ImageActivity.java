@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
@@ -13,33 +14,34 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.Toast;
 
-import com.bumptech.glide.Glide;
-import com.firebase.ui.storage.images.FirebaseImageLoader;
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions;
+import com.firebase.uidemo.BuildConfig;
 import com.firebase.uidemo.R;
-import com.google.android.gms.tasks.OnCompleteListener;
+import com.firebase.uidemo.util.SignInResultNotifier;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.android.gms.tasks.Task;
-import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 import pub.devrel.easypermissions.AfterPermissionGranted;
+import pub.devrel.easypermissions.AppSettingsDialog;
 import pub.devrel.easypermissions.EasyPermissions;
 
-@SuppressWarnings("LogConditional")
-public class ImageActivity extends AppCompatActivity {
+public class ImageActivity extends AppCompatActivity implements EasyPermissions.PermissionCallbacks {
 
     private static final String TAG = "ImageDemo";
     private static final int RC_CHOOSE_PHOTO = 101;
     private static final int RC_IMAGE_PERMS = 102;
+    private static final String PERMS = Manifest.permission.READ_EXTERNAL_STORAGE;
 
     private StorageReference mImageRef;
 
@@ -53,33 +55,21 @@ public class ImageActivity extends AppCompatActivity {
     ImageView mImageView;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_image);
         ButterKnife.bind(this);
 
-        // By default, Firebase Storage files require authentication to read or write.
+        // By default, Cloud Storage files require authentication to read or write.
         // For this sample to function correctly, enable Anonymous Auth in the Firebase console:
         // https://console.firebase.google.com/project/_/authentication/providers
-        FirebaseAuth.getInstance().signInAnonymously()
-                .addOnCompleteListener(new OnCompleteListener<AuthResult>() {
-                    @Override
-                    public void onComplete(@NonNull Task<AuthResult> task) {
-                        Log.d(TAG, "signInAnonymously:" + task.isSuccessful());
-                        if (!task.isSuccessful()) {
-                            Log.w(TAG, "signInAnonymously", task.getException());
-                            Log.w(TAG, getString(R.string.anonymous_auth_failed_msg));
-
-                            Toast.makeText(ImageActivity.this,
-                                    getString(R.string.anonymous_auth_failed_toast),
-                                    Toast.LENGTH_SHORT).show();
-                        }
-                    }
-                });
+        FirebaseAuth.getInstance()
+                .signInAnonymously()
+                .addOnCompleteListener(new SignInResultNotifier(this));
     }
 
     @Override
-    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
         if (requestCode == RC_CHOOSE_PHOTO) {
@@ -89,22 +79,18 @@ public class ImageActivity extends AppCompatActivity {
             } else {
                 Toast.makeText(this, "No image chosen", Toast.LENGTH_SHORT).show();
             }
+        } else if (requestCode == AppSettingsDialog.DEFAULT_SETTINGS_REQ_CODE
+                && EasyPermissions.hasPermissions(this, PERMS)) {
+            choosePhoto();
         }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        EasyPermissions.onRequestPermissionsResult(requestCode, permissions, grantResults, this);
     }
 
     @OnClick(R.id.button_choose_photo)
     @AfterPermissionGranted(RC_IMAGE_PERMS)
     protected void choosePhoto() {
-        String perm = Manifest.permission.READ_EXTERNAL_STORAGE;
-        if (!EasyPermissions.hasPermissions(this, perm)) {
+        if (!EasyPermissions.hasPermissions(this, PERMS)) {
             EasyPermissions.requestPermissions(this, getString(R.string.rational_image_perm),
-                    RC_IMAGE_PERMS, perm);
+                                               RC_IMAGE_PERMS, PERMS);
             return;
         }
 
@@ -112,22 +98,24 @@ public class ImageActivity extends AppCompatActivity {
         startActivityForResult(i, RC_CHOOSE_PHOTO);
     }
 
-    protected void uploadPhoto(Uri uri) {
+    private void uploadPhoto(Uri uri) {
         // Reset UI
         hideDownloadUI();
         Toast.makeText(this, "Uploading...", Toast.LENGTH_SHORT).show();
 
-        // Upload to Firebase Storage
+        // Upload to Cloud Storage
         String uuid = UUID.randomUUID().toString();
         mImageRef = FirebaseStorage.getInstance().getReference(uuid);
         mImageRef.putFile(uri)
                 .addOnSuccessListener(this, new OnSuccessListener<UploadTask.TaskSnapshot>() {
                     @Override
                     public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
-                        Log.d(TAG, "uploadPhoto:onSuccess:" +
-                                taskSnapshot.getMetadata().getReference().getPath());
+                        if (BuildConfig.DEBUG) {
+                            Log.d(TAG, "uploadPhoto:onSuccess:" +
+                                    taskSnapshot.getMetadata().getReference().getPath());
+                        }
                         Toast.makeText(ImageActivity.this, "Image uploaded",
-                                Toast.LENGTH_SHORT).show();
+                                       Toast.LENGTH_SHORT).show();
 
                         showDownloadUI();
                     }
@@ -137,7 +125,7 @@ public class ImageActivity extends AppCompatActivity {
                     public void onFailure(@NonNull Exception e) {
                         Log.w(TAG, "uploadPhoto:onError", e);
                         Toast.makeText(ImageActivity.this, "Upload failed",
-                                Toast.LENGTH_SHORT).show();
+                                       Toast.LENGTH_SHORT).show();
                     }
                 });
     }
@@ -145,11 +133,11 @@ public class ImageActivity extends AppCompatActivity {
     @OnClick(R.id.button_download_direct)
     protected void downloadDirect() {
         // Download directly from StorageReference using Glide
-        Glide.with(this)
-                .using(new FirebaseImageLoader())
+        // (See MyAppGlideModule for Loader registration)
+        GlideApp.with(this)
                 .load(mImageRef)
                 .centerCrop()
-                .crossFade()
+                .transition(DrawableTransitionOptions.withCrossFade())
                 .into(mImageView);
     }
 
@@ -164,5 +152,26 @@ public class ImageActivity extends AppCompatActivity {
         mDownloadDirectButton.setEnabled(true);
 
         mImageView.setVisibility(View.VISIBLE);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        EasyPermissions.onRequestPermissionsResult(requestCode, permissions, grantResults, this);
+    }
+
+    @Override
+    public void onPermissionsGranted(int requestCode, @NonNull List<String> perms) {
+        // See #choosePhoto with @AfterPermissionGranted
+    }
+
+    @Override
+    public void onPermissionsDenied(int requestCode, @NonNull List<String> perms) {
+        if (EasyPermissions.somePermissionPermanentlyDenied(this,
+                                                            Collections.singletonList(PERMS))) {
+            new AppSettingsDialog.Builder(this).build().show();
+        }
     }
 }

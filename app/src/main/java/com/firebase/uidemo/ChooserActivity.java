@@ -14,90 +14,112 @@
 
 package com.firebase.uidemo;
 
-import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.support.annotation.Nullable;
+import android.support.annotation.StringRes;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
-import android.widget.ListView;
 import android.widget.TextView;
 
+import com.firebase.uidemo.auth.AnonymousUpgradeActivity;
 import com.firebase.uidemo.auth.AuthUiActivity;
-import com.firebase.uidemo.database.ChatActivity;
+import com.firebase.uidemo.database.firestore.FirestoreChatActivity;
+import com.firebase.uidemo.database.firestore.FirestorePagingActivity;
+import com.firebase.uidemo.database.realtime.RealtimeDbChatActivity;
 import com.firebase.uidemo.storage.ImageActivity;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
-import butterknife.OnItemClick;
 
 public class ChooserActivity extends AppCompatActivity {
-
-    private static final Class[] CLASSES = new Class[]{
-            ChatActivity.class,
-            AuthUiActivity.class,
-            ImageActivity.class,
-    };
-
-    private static final int[] DESCRIPTION_NAMES = new int[] {
-            R.string.name_chat,
-            R.string.name_auth_ui,
-            R.string.name_image
-    };
-
-    private static final int[] DESCRIPTION_IDS = new int[] {
-            R.string.desc_chat,
-            R.string.desc_auth_ui,
-            R.string.desc_image
-    };
-
-    @BindView(R.id.list_view)
-    ListView mListView;
+    @BindView(R.id.activities)
+    RecyclerView mActivities;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_chooser);
         ButterKnife.bind(this);
 
-        mListView.setAdapter(new MyArrayAdapter(
-                this,
-                android.R.layout.simple_list_item_2,
-                CLASSES));
+        mActivities.setLayoutManager(new LinearLayoutManager(this));
+        mActivities.setAdapter(new ActivityChooserAdapter());
+        mActivities.setHasFixedSize(true);
     }
 
-    @OnItemClick(R.id.list_view)
-    public void onItemClick(int position) {
-        Class clicked = CLASSES[position];
-        startActivity(new Intent(this, clicked));
-    }
+    private static class ActivityChooserAdapter extends RecyclerView.Adapter<ActivityStarterHolder> {
+        private static final Class[] CLASSES = new Class[]{
+                AuthUiActivity.class,
+                AnonymousUpgradeActivity.class,
+                FirestoreChatActivity.class,
+                FirestorePagingActivity.class,
+                RealtimeDbChatActivity.class,
+                ImageActivity.class,
+        };
 
-    public static class MyArrayAdapter extends ArrayAdapter<Class> {
+        private static final int[] DESCRIPTION_NAMES = new int[]{
+                R.string.title_auth_activity,
+                R.string.title_anonymous_upgrade,
+                R.string.title_firestore_activity,
+                R.string.title_firestore_paging_activity,
+                R.string.title_realtime_database_activity,
+                R.string.title_storage_activity
+        };
 
-        private Context mContext;
+        private static final int[] DESCRIPTION_IDS = new int[]{
+                R.string.desc_auth,
+                R.string.desc_anonymous_upgrade,
+                R.string.desc_firestore,
+                R.string.desc_firestore_paging,
+                R.string.desc_realtime_database,
+                R.string.desc_storage
+        };
 
-        public MyArrayAdapter(Context context, int resource, Class... objects) {
-            super(context, resource, objects);
-            mContext = context;
+        @Override
+        public ActivityStarterHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            return new ActivityStarterHolder(
+                    LayoutInflater.from(parent.getContext())
+                            .inflate(R.layout.activity_chooser_item, parent, false));
         }
 
         @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            View view;
+        public void onBindViewHolder(ActivityStarterHolder holder, int position) {
+            holder.bind(CLASSES[position], DESCRIPTION_NAMES[position], DESCRIPTION_IDS[position]);
+        }
 
-            if (convertView == null) {
-                LayoutInflater inflater = (LayoutInflater) mContext.getSystemService(LAYOUT_INFLATER_SERVICE);
-                view = inflater.inflate(android.R.layout.simple_list_item_2, null);
-            } else {
-                view = convertView;
-            }
+        @Override
+        public int getItemCount() {
+            return CLASSES.length;
+        }
+    }
 
-            ((TextView) view.findViewById(android.R.id.text1)).setText(DESCRIPTION_NAMES[position]);
-            ((TextView) view.findViewById(android.R.id.text2)).setText(DESCRIPTION_IDS[position]);
+    private static class ActivityStarterHolder extends RecyclerView.ViewHolder implements View.OnClickListener {
+        private TextView mTitle;
+        private TextView mDescription;
 
-            return view;
+        private Class mStarterClass;
+
+        public ActivityStarterHolder(View itemView) {
+            super(itemView);
+            mTitle = itemView.findViewById(R.id.text1);
+            mDescription = itemView.findViewById(R.id.text2);
+        }
+
+        private void bind(Class aClass, @StringRes int name, @StringRes int description) {
+            mStarterClass = aClass;
+
+            mTitle.setText(name);
+            mDescription.setText(description);
+            itemView.setOnClickListener(this);
+        }
+
+        @Override
+        public void onClick(View v) {
+            itemView.getContext().startActivity(new Intent(itemView.getContext(), mStarterClass));
         }
     }
 }

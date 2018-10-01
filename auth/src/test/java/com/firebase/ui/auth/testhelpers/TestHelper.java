@@ -15,84 +15,135 @@
 package com.firebase.ui.auth.testhelpers;
 
 import android.content.Context;
+import android.content.res.Resources;
 
 import com.firebase.ui.auth.AuthUI;
 import com.firebase.ui.auth.AuthUI.IdpConfig;
-import com.firebase.ui.auth.IdpResponse;
-import com.firebase.ui.auth.ui.FlowParameters;
+import com.firebase.ui.auth.R;
+import com.firebase.ui.auth.data.model.FlowParameters;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
+import com.google.firebase.auth.EmailAuthProvider;
+import com.google.firebase.auth.FacebookAuthProvider;
+import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.GithubAuthProvider;
+import com.google.firebase.auth.GoogleAuthProvider;
+import com.google.firebase.auth.PhoneAuthProvider;
+import com.google.firebase.auth.TwitterAuthProvider;
 
-import org.mockito.ArgumentCaptor;
+import org.robolectric.RuntimeEnvironment;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
-public class TestHelper {
-    private static final String APPLICATION_ID = "testAppId";
-    private static final String API_KEY = "fakeKey";
-    private static final String FIREBASE_APP_NAME = "firebaseAppName";
+public final class TestHelper {
+    public static final FirebaseApp MOCK_APP;
 
-    public static FirebaseApp initializeApp(Context context) {
-        try {
-            return FirebaseApp.initializeApp(
-                    context,
-                    new FirebaseOptions.Builder()
-                            .setApiKey(API_KEY)
-                            .setApplicationId(APPLICATION_ID)
-                            .build(),
-                    FIREBASE_APP_NAME);
-        } catch (IllegalStateException e) {
-            return FirebaseApp.getInstance(FIREBASE_APP_NAME);
-        }
+    static {
+        FirebaseApp app = mock(FirebaseApp.class);
+        when(app.get(eq(FirebaseAuth.class))).thenReturn(mock(FirebaseAuth.class));
+        when(app.getApplicationContext()).thenReturn(RuntimeEnvironment.application);
+        when(app.getName()).thenReturn(FirebaseApp.DEFAULT_APP_NAME);
+        MOCK_APP = app;
     }
 
-    public static FlowParameters getFlowParameters(List<String> providerIds) {
+    public static void initialize() {
+        spyContextAndResources();
+        AuthUI.setApplicationContext(RuntimeEnvironment.application);
+        initializeApp(RuntimeEnvironment.application);
+        initializeProviders();
+    }
+
+    private static void spyContextAndResources() {
+        RuntimeEnvironment.application = spy(RuntimeEnvironment.application);
+        when(RuntimeEnvironment.application.getApplicationContext())
+                .thenReturn(RuntimeEnvironment.application);
+        Resources spiedResources = spy(RuntimeEnvironment.application.getResources());
+        when(RuntimeEnvironment.application.getResources()).thenReturn(spiedResources);
+    }
+
+    private static void initializeApp(Context context) {
+        if (!FirebaseApp.getApps(context).isEmpty()) return;
+
+        FirebaseApp.initializeApp(context, new FirebaseOptions.Builder()
+                .setApiKey("fake")
+                .setApplicationId("fake")
+                .build());
+    }
+
+    private static void initializeProviders() {
+        Context context = RuntimeEnvironment.application;
+        when(context.getString(R.string.firebase_web_host)).thenReturn("abc");
+        when(context.getString(R.string.default_web_client_id)).thenReturn("abc");
+        when(context.getString(R.string.facebook_application_id)).thenReturn("abc");
+        when(context.getString(R.string.twitter_consumer_key)).thenReturn("abc");
+        when(context.getString(R.string.twitter_consumer_secret)).thenReturn("abc");
+        when(context.getString(R.string.github_client_id)).thenReturn("abc");
+        when(context.getString(R.string.github_client_secret)).thenReturn("abc");
+    }
+
+    public static FirebaseUser getMockFirebaseUser() {
+        FirebaseUser user = mock(FirebaseUser.class);
+        when(user.getUid()).thenReturn(TestConstants.UID);
+        when(user.getEmail()).thenReturn(TestConstants.EMAIL);
+        when(user.getDisplayName()).thenReturn(TestConstants.NAME);
+        when(user.getPhotoUrl()).thenReturn(TestConstants.PHOTO_URI);
+
+        return user;
+    }
+
+    public static FlowParameters getFlowParameters(Collection<String> providerIds) {
+        return getFlowParameters(providerIds, false);
+    }
+
+    public static FlowParameters getFlowParameters(Collection<String> providerIds,
+                                                   boolean enableAnonymousUpgrade) {
         List<IdpConfig> idpConfigs = new ArrayList<>();
         for (String providerId : providerIds) {
-            idpConfigs.add(new IdpConfig.Builder(providerId).build());
+            switch (providerId) {
+                case GoogleAuthProvider.PROVIDER_ID:
+                    idpConfigs.add(new IdpConfig.GoogleBuilder().build());
+                    break;
+                case FacebookAuthProvider.PROVIDER_ID:
+                    idpConfigs.add(new IdpConfig.FacebookBuilder().build());
+                    break;
+                case TwitterAuthProvider.PROVIDER_ID:
+                    idpConfigs.add(new IdpConfig.TwitterBuilder().build());
+                    break;
+                case GithubAuthProvider.PROVIDER_ID:
+                    idpConfigs.add(new IdpConfig.GitHubBuilder().build());
+                    break;
+                case EmailAuthProvider.PROVIDER_ID:
+                    idpConfigs.add(new IdpConfig.EmailBuilder().build());
+                    break;
+                case PhoneAuthProvider.PROVIDER_ID:
+                    idpConfigs.add(new IdpConfig.PhoneBuilder().build());
+                    break;
+                case AuthUI.ANONYMOUS_PROVIDER:
+                    idpConfigs.add(new IdpConfig.AnonymousBuilder().build());
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown provider: " + providerId);
+            }
         }
         return new FlowParameters(
-                FIREBASE_APP_NAME,
+                FirebaseApp.DEFAULT_APP_NAME,
                 idpConfigs,
                 AuthUI.getDefaultTheme(),
                 AuthUI.NO_LOGO,
                 null,
-                true);
+                null,
+                true,
+                true,
+                enableAnonymousUpgrade);
     }
 
-    public static FirebaseUser makeMockFirebaseUser() {
-        FirebaseUser mockFirebaseUser = mock(FirebaseUser.class);
-        when(mockFirebaseUser.getEmail()).thenReturn(TestConstants.EMAIL);
-        when(mockFirebaseUser.getDisplayName()).thenReturn(TestConstants.NAME);
-        when(mockFirebaseUser.getPhotoUrl()).thenReturn(TestConstants.PHOTO_URI);
-        return mockFirebaseUser;
-    }
 
-    public static void verifySmartLockSave(String providerId, String email, String password) {
-        ArgumentCaptor<FirebaseUser> userArgumentCaptor =
-                ArgumentCaptor.forClass(FirebaseUser.class);
-        ArgumentCaptor<IdpResponse> idpResponseArgumentCaptor =
-                ArgumentCaptor.forClass(IdpResponse.class);
-        ArgumentCaptor<String> passwordArgumentCaptor = ArgumentCaptor.forClass(String.class);
-        verify(ActivityHelperShadow.sSaveSmartLock)
-                .saveCredentialsOrFinish(userArgumentCaptor.capture(),
-                passwordArgumentCaptor.capture(), idpResponseArgumentCaptor.capture());
-        assertEquals(email, userArgumentCaptor.getValue().getEmail());
-        assertEquals(password, passwordArgumentCaptor.getValue());
-        if (providerId == null) {
-            assertNull(idpResponseArgumentCaptor.getValue());
-        } else {
-            assertEquals(
-                    providerId,
-                    idpResponseArgumentCaptor.getValue().getProviderType());
-        }
-    }
 }
