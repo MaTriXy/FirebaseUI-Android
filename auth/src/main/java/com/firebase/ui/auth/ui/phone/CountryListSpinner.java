@@ -17,22 +17,23 @@
  */
 package com.firebase.ui.auth.ui.phone;
 
-import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Parcelable;
-import android.support.annotation.NonNull;
-import android.support.v7.widget.AppCompatEditText;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.ListView;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 
+import com.firebase.ui.auth.R;
 import com.firebase.ui.auth.data.model.CountryInfo;
 import com.firebase.ui.auth.util.ExtraConstants;
 import com.firebase.ui.auth.util.data.PhoneNumberUtils;
+import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,70 +43,110 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-public final class CountryListSpinner extends AppCompatEditText implements View.OnClickListener {
+import androidx.annotation.NonNull;
+import androidx.appcompat.widget.ListPopupWindow;
+
+public final class CountryListSpinner extends TextInputEditText implements View.OnClickListener {
 
     private static final String KEY_SUPER_STATE = "KEY_SUPER_STATE";
     private static final String KEY_COUNTRY_INFO = "KEY_COUNTRY_INFO";
 
-    private final String mTextFormat;
-    private final DialogPopup mDialogPopup;
-    private final CountryListAdapter mCountryListAdapter;
-    private OnClickListener mListener;
-    private String mSelectedCountryName;
+    private final ArrayAdapter<CountryInfo> mCountryListAdapter;
+    private View.OnClickListener mListener;
     private CountryInfo mSelectedCountryInfo;
 
-    private Set<String> mWhitelistedCountryIsos;
-    private Set<String> mBlacklistedCountryIsos;
+    private ListPopupWindow mListPopupWindow;
+
+    private Set<String> mAllowedCountryIsos = new HashSet<>();
+    private Set<String> mBlockedCountryIsos = new HashSet<>();
 
     public CountryListSpinner(Context context) {
-        this(context, null, android.R.attr.spinnerStyle);
+        this(context, null);
     }
 
     public CountryListSpinner(Context context, AttributeSet attrs) {
-        this(context, attrs, android.R.attr.spinnerStyle);
+        this(context, attrs, R.attr.editTextStyle);
     }
 
     public CountryListSpinner(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
         super.setOnClickListener(this);
 
-        mCountryListAdapter = new CountryListAdapter(getContext());
-        mDialogPopup = new DialogPopup(mCountryListAdapter);
-        mTextFormat = "%1$s  +%2$d";
-        mSelectedCountryName = "";
+        mCountryListAdapter = new ArrayAdapter<>(getContext(),
+                R.layout.fui_dgts_country_row,
+                android.R.id.text1);
+        mListPopupWindow = new ListPopupWindow(context, null, R.attr.listPopupWindowStyle);
+        mListPopupWindow.setModal(true);
+
+        // Prevent the keyboard from showing
+        setInputType(EditorInfo.TYPE_NULL);
+
+        mListPopupWindow.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                CountryInfo info = mCountryListAdapter.getItem(position);
+                if (info != null) {
+                    setSelectedForCountry(info.getCountryCode(), info.getLocale());
+                }
+
+                onUnfocus();
+            }
+        });
     }
 
-    public void init(Bundle params) {
+    @Override
+    protected void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
+        super.onFocusChanged(focused, direction, previouslyFocusedRect);
+        if (focused) {
+            onFocus();
+        } else {
+            onUnfocus();
+        }
+    }
+
+    private void onFocus() {
+        hideKeyboard(getContext(), this);
+        mListPopupWindow.show();
+    }
+
+    private void onUnfocus() {
+        mListPopupWindow.dismiss();
+    }
+
+    public void init(Bundle params, View anchorView) {
         if (params != null) {
             List<CountryInfo> countries = getCountriesToDisplayInSpinner(params);
             setCountriesToDisplay(countries);
             setDefaultCountryForSpinner(countries);
+
+            mListPopupWindow.setAnchorView(anchorView);
+            mListPopupWindow.setAdapter(mCountryListAdapter);
         }
     }
 
     private List<CountryInfo> getCountriesToDisplayInSpinner(Bundle params) {
         initCountrySpinnerIsosFromParams(params);
-
         Map<String, Integer> countryInfoMap = PhoneNumberUtils.getImmutableCountryIsoMap();
-        // We consider all countries to be whitelisted if there are no whitelisted
-        // or blacklisted countries given as input.
-        if (mWhitelistedCountryIsos == null && mBlacklistedCountryIsos == null) {
-            this.mWhitelistedCountryIsos = new HashSet<>(countryInfoMap.keySet());
+        
+        // We consider all countries to be allowed if there are no allowed
+        // or blocked countries given as input.
+        if (mAllowedCountryIsos.isEmpty() && mBlockedCountryIsos.isEmpty()) {
+            this.mAllowedCountryIsos = new HashSet<>(countryInfoMap.keySet());
         }
 
         List<CountryInfo> countryInfoList = new ArrayList<>();
 
-        // At this point either mWhitelistedCountryIsos or mBlacklistedCountryIsos is null.
+        // At this point either mAllowedCountryIsos or mBlockedCountryIsos is null.
         // We assume no countries are to be excluded. Here, we correct this assumption based on the
         // contents of either lists.
         Set<String> excludedCountries = new HashSet<>();
-        if (mWhitelistedCountryIsos == null) {
-            // Exclude all countries in the mBlacklistedCountryIsos list.
-            excludedCountries.addAll(mBlacklistedCountryIsos);
+        if (!mBlockedCountryIsos.isEmpty()) {
+            // Exclude all countries in the mBlockedCountryIsos list.
+            excludedCountries.addAll(mBlockedCountryIsos);
         } else {
-            // Exclude all countries that are not present in the mWhitelistedCountryIsos list.
+            // Exclude all countries that are not present in the mAllowedCountryIsos list.
             excludedCountries.addAll(countryInfoMap.keySet());
-            excludedCountries.removeAll(mWhitelistedCountryIsos);
+            excludedCountries.removeAll(mAllowedCountryIsos);
         }
 
         // Once we know which countries need to be excluded, we loop through the country isos,
@@ -121,15 +162,17 @@ public final class CountryListSpinner extends AppCompatEditText implements View.
     }
 
     private void initCountrySpinnerIsosFromParams(@NonNull Bundle params) {
-        List<String> whitelistedCountries =
-                params.getStringArrayList(ExtraConstants.WHITELISTED_COUNTRIES);
-        List<String> blacklistedCountries =
-                params.getStringArrayList(ExtraConstants.BLACKLISTED_COUNTRIES);
+        List<String> allowedCountries =
+                params.getStringArrayList(ExtraConstants.ALLOWLISTED_COUNTRIES);
+        List<String> blockedCountries =
+                params.getStringArrayList(ExtraConstants.BLOCKLISTED_COUNTRIES);
 
-        if (whitelistedCountries != null) {
-            mWhitelistedCountryIsos = convertCodesToIsos(whitelistedCountries);
-        } else if (blacklistedCountries != null) {
-            mBlacklistedCountryIsos = convertCodesToIsos(blacklistedCountries);
+        if (allowedCountries != null) {
+            mAllowedCountryIsos = convertCodesToIsos(allowedCountries);
+        }
+
+        if (blockedCountries != null) {
+            mBlockedCountryIsos = convertCodesToIsos(blockedCountries);
         }
     }
 
@@ -146,7 +189,8 @@ public final class CountryListSpinner extends AppCompatEditText implements View.
     }
 
     public void setCountriesToDisplay(List<CountryInfo> countries) {
-        mCountryListAdapter.setData(countries);
+        mCountryListAdapter.addAll(countries);
+        mCountryListAdapter.notifyDataSetChanged();
     }
 
     private void setDefaultCountryForSpinner(List<CountryInfo> countries) {
@@ -163,9 +207,16 @@ public final class CountryListSpinner extends AppCompatEditText implements View.
 
     public boolean isValidIso(String iso) {
         iso = iso.toUpperCase(Locale.getDefault());
-        return ((mWhitelistedCountryIsos == null && mBlacklistedCountryIsos == null)
-                || (mWhitelistedCountryIsos != null && mWhitelistedCountryIsos.contains(iso))
-                || (mBlacklistedCountryIsos != null && !mBlacklistedCountryIsos.contains(iso)));
+        boolean valid = true;
+        if (!mAllowedCountryIsos.isEmpty()) {
+            valid = valid && mAllowedCountryIsos.contains(iso);
+        }
+
+        if (!mBlockedCountryIsos.isEmpty()) {
+            valid = valid && !mBlockedCountryIsos.contains(iso);
+        }
+
+        return valid;
     }
 
     @Override
@@ -201,15 +252,14 @@ public final class CountryListSpinner extends AppCompatEditText implements View.
     }
 
     public void setSelectedForCountry(int countryCode, Locale locale) {
-        setText(String.format(mTextFormat, CountryInfo.localeToEmoji(locale), countryCode));
         mSelectedCountryInfo = new CountryInfo(locale, countryCode);
+        setText(mSelectedCountryInfo.toShortString());
     }
 
     public void setSelectedForCountry(final Locale locale, String countryCode) {
         if (isValidIso(locale.getCountry())) {
             final String countryName = locale.getDisplayName();
             if (!TextUtils.isEmpty(countryName) && !TextUtils.isEmpty(countryCode)) {
-                mSelectedCountryName = countryName;
                 setSelectedForCountry(Integer.parseInt(countryCode), locale);
             }
         }
@@ -220,22 +270,12 @@ public final class CountryListSpinner extends AppCompatEditText implements View.
     }
 
     @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-
-        if (mDialogPopup.isShowing()) {
-            mDialogPopup.dismiss();
-        }
-    }
-
-    @Override
     public void setOnClickListener(OnClickListener l) {
         mListener = l;
     }
 
     @Override
     public void onClick(View view) {
-        mDialogPopup.show(mCountryListAdapter.getPositionForCountry(mSelectedCountryName));
         hideKeyboard(getContext(), this);
         executeUserClickListener(view);
     }
@@ -244,55 +284,7 @@ public final class CountryListSpinner extends AppCompatEditText implements View.
         if (mListener != null) {
             mListener.onClick(view);
         }
-    }
 
-    public class DialogPopup implements DialogInterface.OnClickListener {
-        //Delay for postDelayed to set selection without showing the scroll animation
-        private static final long DELAY_MILLIS = 10L;
-        private final CountryListAdapter listAdapter;
-        private AlertDialog dialog;
-
-        DialogPopup(CountryListAdapter adapter) {
-            listAdapter = adapter;
-        }
-
-        public void dismiss() {
-            if (dialog != null) {
-                dialog.dismiss();
-                dialog = null;
-            }
-        }
-
-        public boolean isShowing() {
-            return dialog != null && dialog.isShowing();
-        }
-
-        public void show(final int selected) {
-            if (listAdapter == null) {
-                return;
-            }
-
-            final AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
-            dialog = builder.setSingleChoiceItems(listAdapter, 0, this).create();
-            dialog.setCanceledOnTouchOutside(true);
-            final ListView listView = dialog.getListView();
-            listView.setFastScrollEnabled(true);
-            listView.setScrollbarFadingEnabled(false);
-            listView.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    listView.setSelection(selected);
-                }
-            }, DELAY_MILLIS);
-            dialog.show();
-        }
-
-        @Override
-        public void onClick(DialogInterface dialog, int which) {
-            final CountryInfo countryInfo = listAdapter.getItem(which);
-            mSelectedCountryName = countryInfo.getLocale().getDisplayCountry();
-            setSelectedForCountry(countryInfo.getCountryCode(), countryInfo.getLocale());
-            dismiss();
-        }
+        onFocus();
     }
 }

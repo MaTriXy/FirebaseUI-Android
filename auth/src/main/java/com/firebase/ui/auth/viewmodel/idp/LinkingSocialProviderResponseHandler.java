@@ -1,9 +1,7 @@
 package com.firebase.ui.auth.viewmodel.idp;
 
 import android.app.Application;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
+import android.text.TextUtils;
 
 import com.firebase.ui.auth.AuthUI;
 import com.firebase.ui.auth.ErrorCodes;
@@ -21,11 +19,18 @@ import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.AuthResult;
+import com.google.firebase.auth.EmailAuthProvider;
+import com.google.firebase.auth.PhoneAuthProvider;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
 
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class LinkingSocialProviderResponseHandler extends SignInViewModelBase {
     private AuthCredential mRequestedSignInCredential;
     private String mEmail;
+
     public LinkingSocialProviderResponseHandler(Application application) {
         super(application);
     }
@@ -38,20 +43,33 @@ public class LinkingSocialProviderResponseHandler extends SignInViewModelBase {
 
     public void startSignIn(@NonNull final IdpResponse response) {
         if (!response.isSuccessful()) {
-            setResult(Resource.<IdpResponse>forFailure(response.getError()));
+            setResult(Resource.forFailure(response.getError()));
             return;
         }
-        if (!AuthUI.SOCIAL_PROVIDERS.contains(response.getProviderType())) {
+        if (isInvalidProvider(response.getProviderType())) {
             throw new IllegalStateException(
-                    "This handler cannot be used to link email or phone providers");
+                    "This handler cannot be used to link email or phone providers.");
         }
         if (mEmail != null && !mEmail.equals(response.getEmail())) {
-            setResult(Resource.<IdpResponse>forFailure(new FirebaseUiException
+            setResult(Resource.forFailure(new FirebaseUiException
                     (ErrorCodes.EMAIL_MISMATCH_ERROR)));
             return;
         }
 
-        setResult(Resource.<IdpResponse>forLoading());
+        setResult(Resource.forLoading());
+
+        // The Generic IDP flow does not return a credential - it signs us in right away.
+        // If the user was prompted to sign-in via Generic IDP, we can link immediately.
+        // Example: Existing user with Yahoo provider - signs in with microsoft -
+        // prompted to sign in with yahoo. Sign in with Yahoo will be succesful, it won't
+        // return a credential.
+        if (isGenericIdpLinkingFlow(response.getProviderType())) {
+            getAuth().getCurrentUser()
+                    .linkWithCredential(mRequestedSignInCredential)
+                    .addOnSuccessListener(authResult -> handleSuccess(response, authResult))
+                    .addOnFailureListener(e -> Resource.<IdpResponse>forFailure(e));
+            return;
+        }
 
         final AuthOperationManager authOperationManager = AuthOperationManager.getInstance();
         final AuthCredential credential = ProviderUtils.getAuthCredential(response);
@@ -71,55 +89,53 @@ public class LinkingSocialProviderResponseHandler extends SignInViewModelBase {
                 // These IDPs belong to the same account - they must be linked, but we can't lose
                 // our anonymous user session
                 authOperationManager.safeLink(credential, mRequestedSignInCredential, getArguments())
-                        .addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                            @Override
-                            public void onSuccess(AuthResult result) {
-                                handleMergeFailure(credential);
-                            }
-                        })
-                        .addOnFailureListener(new OnFailureListener() {
-                            @Override
-                            public void onFailure(@NonNull Exception e) {
-                                setResult(Resource.<IdpResponse>forFailure(e));
-                            }
-                        });
+                        .addOnSuccessListener(result -> handleMergeFailure(credential))
+                        .addOnFailureListener(e -> setResult(Resource.forFailure(e)));
             }
         } else {
             getAuth().signInWithCredential(credential)
-                    .continueWithTask(new Continuation<AuthResult, Task<AuthResult>>() {
-                        @Override
-                        public Task<AuthResult> then(@NonNull Task<AuthResult> task) {
-                            final AuthResult result = task.getResult();
-                            if (mRequestedSignInCredential == null) {
-                                return Tasks.forResult(result);
-                            } else {
-                                return result.getUser()
-                                        .linkWithCredential(mRequestedSignInCredential)
-                                        .continueWith(new Continuation<AuthResult, AuthResult>() {
-                                            @Override
-                                            public AuthResult then(@NonNull Task<AuthResult> task) {
-                                                if (task.isSuccessful()) {
-                                                    return task.getResult();
-                                                } else {
-                                                    // Since we've already signed in, it's too late
-                                                    // to backtrack so we just ignore any errors.
-                                                    return result;
-                                                }
-                                            }
-                                        });
-                            }
+                    .continueWithTask(task -> {
+                        final AuthResult result = task.getResult();
+                        if (mRequestedSignInCredential == null) {
+                            return Tasks.forResult(result);
+                        } else {
+                            return result.getUser()
+                                    .linkWithCredential(mRequestedSignInCredential)
+                                    .continueWith(task1 -> {
+                                        if (task1.isSuccessful()) {
+                                            return task1.getResult();
+                                        } else {
+                                            // Since we've already signed in, it's too late
+                                            // to backtrack so we just ignore any errors.
+                                            return result;
+                                        }
+                                    });
                         }
                     })
-                    .addOnCompleteListener(new OnCompleteListener<AuthResult>() {
-                        @Override
-                        public void onComplete(@NonNull Task<AuthResult> task) {
-                            if (task.isSuccessful()) {
-                                handleSuccess(response, task.getResult());
-                            } else {
-                                setResult(Resource.<IdpResponse>forFailure(task.getException()));
-                            }
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful()) {
+                            handleSuccess(response, task.getResult());
+                        } else {
+                            setResult(Resource.forFailure(task.getException()));
                         }
                     });
         }
+    }
+
+    public boolean hasCredentialForLinking() {
+        return mRequestedSignInCredential != null;
+    }
+
+    private boolean isGenericIdpLinkingFlow(@NonNull String providerId) {
+        // TODO(lsirac): Remove use of SUPPORTED_OAUTH_PROVIDERS when we decide to support all IDPs
+        return AuthUI.SUPPORTED_OAUTH_PROVIDERS.contains(providerId)
+                && mRequestedSignInCredential != null
+                && getAuth().getCurrentUser() != null
+                && !getAuth().getCurrentUser().isAnonymous();
+    }
+
+    private boolean isInvalidProvider(@NonNull String provider) {
+        return TextUtils.equals(provider, EmailAuthProvider.PROVIDER_ID)
+                || TextUtils.equals(provider, PhoneAuthProvider.PROVIDER_ID);
     }
 }

@@ -1,6 +1,6 @@
 package com.firebase.ui.auth.viewmodel;
 
-import android.arch.lifecycle.Observer;
+import android.app.Application;
 
 import com.firebase.ui.auth.FirebaseAuthAnonymousUpgradeException;
 import com.firebase.ui.auth.IdpResponse;
@@ -33,11 +33,12 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 
 import java.util.Collections;
 
-import static com.google.common.truth.Truth.assertThat;
+import androidx.lifecycle.Observer;
+import androidx.test.core.app.ApplicationProvider;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.inOrder;
@@ -63,11 +64,11 @@ public class WelcomeBackPasswordHandlerTest {
         TestHelper.initialize();
         MockitoAnnotations.initMocks(this);
 
-        mHandler = new WelcomeBackPasswordHandler(RuntimeEnvironment.application);
+        mHandler = new WelcomeBackPasswordHandler((Application) ApplicationProvider.getApplicationContext());
 
         FlowParameters testParams = TestHelper.getFlowParameters(Collections.singletonList(
                 EmailAuthProvider.PROVIDER_ID));
-        mHandler.initializeForTesting(testParams, mMockAuth, mMockCredentials, null);
+        mHandler.initializeForTesting(testParams, mMockAuth, mMockCredentials);
     }
 
     @Test
@@ -98,13 +99,13 @@ public class WelcomeBackPasswordHandlerTest {
 
         // Mock smartlock save to always succeed
         when(mMockCredentials.save(any(Credential.class)))
-                .thenReturn(AutoCompleteTask.<Void>forSuccess(null));
+                .thenReturn(AutoCompleteTask.forSuccess(null));
 
         // Kick off the sign in flow
         mHandler.startSignIn(TestConstants.EMAIL, TestConstants.PASSWORD, response, credential);
 
         // Verify that we get a loading event
-        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.isLoading()));
 
         // Verify that sign in is called with the right arguments
         verify(mMockAuth).signInWithEmailAndPassword(
@@ -114,7 +115,7 @@ public class WelcomeBackPasswordHandlerTest {
         verify(FakeAuthResult.INSTANCE.getUser()).linkWithCredential(credential);
 
         // Verify that we get a success event
-        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
     @Test
@@ -123,20 +124,20 @@ public class WelcomeBackPasswordHandlerTest {
 
         // Mock sign in to always fail
         when(mMockAuth.signInWithEmailAndPassword(any(String.class), any(String.class)))
-                .thenReturn(AutoContinueTask.<AuthResult>forFailure(new Exception("FAILED")));
+                .thenReturn(AutoContinueTask.forFailure(new Exception("FAILED")));
 
         // Kick off the sign in flow
         mHandler.startSignIn(TestConstants.EMAIL, TestConstants.PASSWORD, null, null);
 
         // Verify that we get a loading event
-        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.isLoading()));
 
         // Verify that sign in is called with the right arguments
         verify(mMockAuth).signInWithEmailAndPassword(
                 TestConstants.EMAIL, TestConstants.PASSWORD);
 
         // Verify that we get a failure event
-        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isFailure()));
+        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.isFailure()));
     }
 
     @Test
@@ -166,8 +167,10 @@ public class WelcomeBackPasswordHandlerTest {
         verify(mScratchMockAuth).signInWithCredential(credentialCaptor.capture());
 
         EmailAuthCredential capturedCredential = credentialCaptor.getValue();
-        assertThat(capturedCredential.getEmail()).isEqualTo(TestConstants.EMAIL);
-        assertThat(capturedCredential.getPassword()).isEqualTo(TestConstants.PASSWORD);
+
+        // TODO: EmailAuthCredential no longer exposes .getEmail() or .getPassword()
+        // assertThat(capturedCredential.getEmail()).isEqualTo(TestConstants.EMAIL);
+        // assertThat(capturedCredential.getPassword()).isEqualTo(TestConstants.PASSWORD);
 
         verifyMergeFailure();
     }
@@ -212,8 +215,10 @@ public class WelcomeBackPasswordHandlerTest {
         verify(mScratchMockAuth).signInWithCredential(credentialCaptor.capture());
 
         EmailAuthCredential capturedCredential = credentialCaptor.getValue();
-        assertThat(capturedCredential.getEmail()).isEqualTo(TestConstants.EMAIL);
-        assertThat(capturedCredential.getPassword()).isEqualTo(TestConstants.PASSWORD);
+
+        // TODO: EmailAuthCredential no longer exposes .getEmail() or .getPassword()
+        // assertThat(capturedCredential.getEmail()).isEqualTo(TestConstants.EMAIL);
+        // assertThat(capturedCredential.getPassword()).isEqualTo(TestConstants.PASSWORD);
 
         // Verify that account linking is attempted
         verify(FakeAuthResult.INSTANCE.getUser()).linkWithCredential(credential);
@@ -225,7 +230,7 @@ public class WelcomeBackPasswordHandlerTest {
         // enableAnonymousUpgrade must be set to true
         FlowParameters testParams = TestHelper.getFlowParameters(Collections.singletonList(
                 EmailAuthProvider.PROVIDER_ID), /* enableAnonymousUpgrade */ true);
-        mHandler.initializeForTesting(testParams, mMockAuth, mMockCredentials, null);
+        mHandler.initializeForTesting(testParams, mMockAuth, mMockCredentials);
 
         // Mock isAnonymous() to return true so canUpgradeAnonymous will return true
         when(mUser.isAnonymous()).thenReturn(true);
@@ -236,7 +241,7 @@ public class WelcomeBackPasswordHandlerTest {
         InOrder inOrder = inOrder(mResponseObserver);
 
         inOrder.verify(mResponseObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
 
         ArgumentCaptor<Resource<IdpResponse>> resolveCaptor =
                 ArgumentCaptor.forClass(Resource.class);
@@ -248,7 +253,8 @@ public class WelcomeBackPasswordHandlerTest {
         EmailAuthCredential responseCredential =
                 (EmailAuthCredential) e.getResponse().getCredentialForLinking();
 
-        assertThat(responseCredential.getEmail()).isEqualTo(TestConstants.EMAIL);
-        assertThat(responseCredential.getPassword()).isEqualTo(TestConstants.PASSWORD);
+        // TODO: EmailAuthCredential no longer exposes .getEmail() or .getPassword()
+        // assertThat(responseCredential.getEmail()).isEqualTo(TestConstants.EMAIL);
+        // assertThat(responseCredential.getPassword()).isEqualTo(TestConstants.PASSWORD);
     }
 }

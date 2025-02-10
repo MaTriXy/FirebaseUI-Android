@@ -4,8 +4,6 @@ import android.app.Activity;
 import android.app.Application;
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.text.TextUtils;
 
 import com.firebase.ui.auth.AuthUI;
@@ -17,6 +15,7 @@ import com.firebase.ui.auth.data.model.Resource;
 import com.firebase.ui.auth.data.model.User;
 import com.firebase.ui.auth.data.model.UserCancellationException;
 import com.firebase.ui.auth.ui.email.EmailActivity;
+import com.firebase.ui.auth.ui.email.EmailLinkCatcherActivity;
 import com.firebase.ui.auth.ui.idp.AuthMethodPickerActivity;
 import com.firebase.ui.auth.ui.idp.SingleSignInActivity;
 import com.firebase.ui.auth.ui.phone.PhoneActivity;
@@ -37,16 +36,18 @@ import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.EmailAuthProvider;
-import com.google.firebase.auth.FacebookAuthProvider;
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
 import com.google.firebase.auth.FirebaseAuthInvalidUserException;
-import com.google.firebase.auth.GithubAuthProvider;
 import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.auth.PhoneAuthProvider;
-import com.google.firebase.auth.TwitterAuthProvider;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import static com.firebase.ui.auth.AuthUI.EMAIL_LINK_PROVIDER;
 
 public class SignInKickstarter extends SignInViewModelBase {
     public SignInKickstarter(Application application) {
@@ -54,6 +55,34 @@ public class SignInKickstarter extends SignInViewModelBase {
     }
 
     public void start() {
+        if (!TextUtils.isEmpty(getArguments().emailLink)) {
+            setResult(Resource.forFailure(new IntentRequiredException(
+                    EmailLinkCatcherActivity.createIntent(getApplication(), getArguments()),
+                    RequestCodes.EMAIL_FLOW)));
+            return;
+        }
+
+        // Signing in with Generic IDP puts the app in the background - it can be reclaimed by the
+        // OS during the sign in flow.
+        Task<AuthResult> pendingResultTask = getAuth().getPendingAuthResult();
+        if (pendingResultTask != null) {
+            pendingResultTask
+                    .addOnSuccessListener(
+                            authResult -> {
+                                final IdpResponse response = new IdpResponse.Builder(
+                                        new User.Builder(
+                                                authResult.getCredential().getProvider(),
+                                                authResult.getUser().getEmail()).build())
+                                        .build();
+                                handleSuccess(response, authResult);
+
+                            })
+                    .addOnFailureListener(
+                            e -> setResult(Resource.forFailure(e)));
+            return;
+        }
+
+
         // Only support password credentials if email auth is enabled
         boolean supportPasswords = ProviderUtils.getConfigFromIdps(
                 getArguments().providers, EmailAuthProvider.PROVIDER_ID) != null;
@@ -63,30 +92,27 @@ public class SignInKickstarter extends SignInViewModelBase {
         boolean willRequestCredentials = supportPasswords || accountTypes.size() > 0;
 
         if (getArguments().enableCredentials && willRequestCredentials) {
-            setResult(Resource.<IdpResponse>forLoading());
+            setResult(Resource.forLoading());
 
             GoogleApiUtils.getCredentialsClient(getApplication())
                     .request(new CredentialRequest.Builder()
                             .setPasswordLoginSupported(supportPasswords)
                             .setAccountTypes(accountTypes.toArray(new String[accountTypes.size()]))
                             .build())
-                    .addOnCompleteListener(new OnCompleteListener<CredentialRequestResponse>() {
-                        @Override
-                        public void onComplete(@NonNull Task<CredentialRequestResponse> task) {
-                            try {
-                                handleCredential(
-                                        task.getResult(ApiException.class).getCredential());
-                            } catch (ResolvableApiException e) {
-                                if (e.getStatusCode() == CommonStatusCodes.RESOLUTION_REQUIRED) {
-                                    setResult(Resource.<IdpResponse>forFailure(
-                                            new PendingIntentRequiredException(
-                                                    e.getResolution(), RequestCodes.CRED_HINT)));
-                                } else {
-                                    startAuthMethodChoice();
-                                }
-                            } catch (ApiException e) {
+                    .addOnCompleteListener(task -> {
+                        try {
+                            handleCredential(
+                                    task.getResult(ApiException.class).getCredential());
+                        } catch (ResolvableApiException e) {
+                            if (e.getStatusCode() == CommonStatusCodes.RESOLUTION_REQUIRED) {
+                                setResult(Resource.forFailure(
+                                        new PendingIntentRequiredException(
+                                                e.getResolution(), RequestCodes.CRED_HINT)));
+                            } else {
                                 startAuthMethodChoice();
                             }
+                        } catch (ApiException e) {
+                            startAuthMethodChoice();
                         }
                     });
         } else {
@@ -95,18 +121,18 @@ public class SignInKickstarter extends SignInViewModelBase {
     }
 
     private void startAuthMethodChoice() {
-        // If there is only one provider selected, launch the flow directly
-        if (getArguments().isSingleProviderFlow()) {
-            AuthUI.IdpConfig firstIdpConfig = getArguments().providers.get(0);
+        if (!getArguments().shouldShowProviderChoice()) {
+            AuthUI.IdpConfig firstIdpConfig = getArguments().getDefaultOrFirstProvider();
             String firstProvider = firstIdpConfig.getProviderId();
             switch (firstProvider) {
+                case EMAIL_LINK_PROVIDER:
                 case EmailAuthProvider.PROVIDER_ID:
-                    setResult(Resource.<IdpResponse>forFailure(new IntentRequiredException(
+                    setResult(Resource.forFailure(new IntentRequiredException(
                             EmailActivity.createIntent(getApplication(), getArguments()),
                             RequestCodes.EMAIL_FLOW)));
                     break;
                 case PhoneAuthProvider.PROVIDER_ID:
-                    setResult(Resource.<IdpResponse>forFailure(new IntentRequiredException(
+                    setResult(Resource.forFailure(new IntentRequiredException(
                             PhoneActivity.createIntent(
                                     getApplication(), getArguments(), firstIdpConfig.getParams()),
                             RequestCodes.PHONE_FLOW)));
@@ -116,7 +142,7 @@ public class SignInKickstarter extends SignInViewModelBase {
                     break;
             }
         } else {
-            setResult(Resource.<IdpResponse>forFailure(new IntentRequiredException(
+            setResult(Resource.forFailure(new IntentRequiredException(
                     AuthMethodPickerActivity.createIntent(getApplication(), getArguments()),
                     RequestCodes.AUTH_PICKER_FLOW)));
         }
@@ -125,33 +151,27 @@ public class SignInKickstarter extends SignInViewModelBase {
     private void redirectSignIn(String provider, String id) {
         switch (provider) {
             case EmailAuthProvider.PROVIDER_ID:
-                setResult(Resource.<IdpResponse>forFailure(new IntentRequiredException(
+                setResult(Resource.forFailure(new IntentRequiredException(
                         EmailActivity.createIntent(getApplication(), getArguments(), id),
                         RequestCodes.EMAIL_FLOW)));
                 break;
             case PhoneAuthProvider.PROVIDER_ID:
                 Bundle args = new Bundle();
                 args.putString(ExtraConstants.PHONE, id);
-                setResult(Resource.<IdpResponse>forFailure(new IntentRequiredException(
+                setResult(Resource.forFailure(new IntentRequiredException(
                         PhoneActivity.createIntent(
                                 getApplication(),
                                 getArguments(),
                                 args),
                         RequestCodes.PHONE_FLOW)));
                 break;
-            case GoogleAuthProvider.PROVIDER_ID:
-            case FacebookAuthProvider.PROVIDER_ID:
-            case TwitterAuthProvider.PROVIDER_ID:
-            case GithubAuthProvider.PROVIDER_ID:
-                setResult(Resource.<IdpResponse>forFailure(new IntentRequiredException(
+            default:
+                setResult(Resource.forFailure(new IntentRequiredException(
                         SingleSignInActivity.createIntent(
                                 getApplication(),
                                 getArguments(),
                                 new User.Builder(provider, id).build()),
                         RequestCodes.PROVIDER_FLOW)));
-                break;
-            default:
-                startAuthMethodChoice();
         }
     }
 
@@ -175,20 +195,24 @@ public class SignInKickstarter extends SignInViewModelBase {
                     startAuthMethodChoice();
                 }
                 break;
-            case RequestCodes.AUTH_PICKER_FLOW:
             case RequestCodes.EMAIL_FLOW:
+            case RequestCodes.AUTH_PICKER_FLOW:
             case RequestCodes.PHONE_FLOW:
             case RequestCodes.PROVIDER_FLOW:
+                if (resultCode == RequestCodes.EMAIL_LINK_WRONG_DEVICE_FLOW || resultCode == RequestCodes.EMAIL_LINK_INVALID_LINK_FLOW) {
+                    startAuthMethodChoice();
+                    return;
+                }
                 IdpResponse response = IdpResponse.fromResultIntent(data);
                 if (response == null) {
-                    setResult(Resource.<IdpResponse>forFailure(new UserCancellationException()));
+                    setResult(Resource.forFailure(new UserCancellationException()));
                 } else if (response.isSuccessful()) {
                     setResult(Resource.forSuccess(response));
                 } else if (response.getError().getErrorCode() ==
                         ErrorCodes.ANONYMOUS_UPGRADE_MERGE_CONFLICT) {
                     handleMergeFailure(response);
                 } else {
-                    setResult(Resource.<IdpResponse>forFailure(response.getError()));
+                    setResult(Resource.forFailure(response.getError()));
                 }
         }
     }
@@ -208,27 +232,19 @@ public class SignInKickstarter extends SignInViewModelBase {
             final IdpResponse response = new IdpResponse.Builder(
                     new User.Builder(EmailAuthProvider.PROVIDER_ID, id).build()).build();
 
-            setResult(Resource.<IdpResponse>forLoading());
+            setResult(Resource.forLoading());
             getAuth().signInWithEmailAndPassword(id, password)
-                    .addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                        @Override
-                        public void onSuccess(AuthResult result) {
-                            handleSuccess(response, result);
+                    .addOnSuccessListener(result -> handleSuccess(response, result))
+                    .addOnFailureListener(e -> {
+                        if (e instanceof FirebaseAuthInvalidUserException
+                                || e instanceof FirebaseAuthInvalidCredentialsException) {
+                            // In this case the credential saved in SmartLock was not
+                            // a valid credential, we should delete it from SmartLock
+                            // before continuing.
+                            GoogleApiUtils.getCredentialsClient(getApplication())
+                                    .delete(credential);
                         }
-                    })
-                    .addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            if (e instanceof FirebaseAuthInvalidUserException
-                                    || e instanceof FirebaseAuthInvalidCredentialsException) {
-                                // In this case the credential saved in SmartLock was not
-                                // a valid credential, we should delete it from SmartLock
-                                // before continuing.
-                                GoogleApiUtils.getCredentialsClient(getApplication())
-                                        .delete(credential);
-                            }
-                            startAuthMethodChoice();
-                        }
+                        startAuthMethodChoice();
                     });
         }
     }

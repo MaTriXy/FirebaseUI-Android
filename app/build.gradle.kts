@@ -1,7 +1,23 @@
 // NOTE: this project uses Gradle Kotlin DSL. More common build.gradle instructions can be found in
 // the main README.
+plugins {
+  id("com.android.application")
+}
 
 android {
+    compileSdk = Config.SdkVersions.compile
+
+    defaultConfig {
+        minSdk = Config.SdkVersions.min
+        targetSdk = Config.SdkVersions.target
+
+        versionName = Config.version
+        versionCode = 1
+
+        resourcePrefix("fui_")
+        vectorDrawables.useSupportLibrary = true
+    }
+
     defaultConfig {
         multiDexEnabled = true
     }
@@ -21,40 +37,63 @@ android {
         }
     }
 
-    lintOptions {
-        disable("ResourceName", "MissingTranslation")
+    lint {
+        // Common lint options across all modules
+
+        disable += mutableSetOf(
+            "IconExpectedSize",
+            "InvalidPackage", // Firestore uses GRPC which makes lint mad
+            "NewerVersionAvailable", "GradleDependency", // For reproducible builds
+            "SelectableText", "SyntheticAccessor", // We almost never care about this
+            "UnusedIds", "MediaCapabilities" // TODO(rosariopfernandes): remove this once we confirm
+            // it builds successfully
+        )
+
+        // Module-specific
+        disable += mutableSetOf("ResourceName", "MissingTranslation", "DuplicateStrings")
+
+        checkAllWarnings = true
+        warningsAsErrors = true
+        abortOnError = true
+
+        baseline = file("$rootDir/library/quality/lint-baseline.xml")
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    buildFeatures {
+        viewBinding = true
     }
 }
 
 dependencies {
-    implementation(Config.Libs.Firebase.core)
-    implementation(Config.Libs.Support.design)
-    implementation(Config.Libs.Support.multidex)
+    implementation(Config.Libs.Androidx.materialDesign)
+    implementation(Config.Libs.Androidx.multidex)
 
     implementation(project(":auth"))
-    implementation(project(":auth-github"))
     implementation(project(":firestore"))
     implementation(project(":database"))
     implementation(project(":storage"))
 
     implementation(Config.Libs.Provider.facebook)
     // Needed to override Facebook
-    implementation(Config.Libs.Support.cardView)
-    implementation(Config.Libs.Support.customTabs)
-    implementation(Config.Libs.Provider.twitter) { isTransitive = true }
+    implementation(Config.Libs.Androidx.cardView)
+    implementation(Config.Libs.Androidx.customTabs)
 
     implementation(Config.Libs.Misc.glide)
     annotationProcessor(Config.Libs.Misc.glideCompiler)
 
     // Used for FirestorePagingActivity
-    implementation(Config.Libs.Arch.paging)
+    implementation(Config.Libs.Androidx.paging)
 
     // The following dependencies are not required to use the Firebase UI library.
     // They are used to make some aspects of the demo app implementation simpler for
     // demonstrative purposes, and you may find them useful in your own apps; YMMV.
     implementation(Config.Libs.Misc.permissions)
-    implementation(Config.Libs.Misc.butterKnife)
-    annotationProcessor(Config.Libs.Misc.butterKnifeCompiler)
+    implementation(Config.Libs.Androidx.constraint)
     debugImplementation(Config.Libs.Misc.leakCanary)
     debugImplementation(Config.Libs.Misc.leakCanaryFragments)
     releaseImplementation(Config.Libs.Misc.leakCanaryNoop)

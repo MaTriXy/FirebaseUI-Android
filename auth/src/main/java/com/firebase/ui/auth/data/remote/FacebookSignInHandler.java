@@ -4,9 +4,6 @@ import android.app.Application;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
 
 import com.facebook.CallbackManager;
 import com.facebook.FacebookCallback;
@@ -23,10 +20,12 @@ import com.firebase.ui.auth.FirebaseUiException;
 import com.firebase.ui.auth.IdpResponse;
 import com.firebase.ui.auth.data.model.Resource;
 import com.firebase.ui.auth.data.model.User;
+import com.firebase.ui.auth.data.model.UserCancellationException;
 import com.firebase.ui.auth.ui.HelperActivityBase;
 import com.firebase.ui.auth.util.ExtraConstants;
 import com.firebase.ui.auth.viewmodel.ProviderSignInBase;
 import com.google.firebase.auth.FacebookAuthProvider;
+import com.google.firebase.auth.FirebaseAuth;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -35,8 +34,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
+
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public class FacebookSignInHandler extends ProviderSignInBase<AuthUI.IdpConfig> {
+public class FacebookSignInHandler extends SingleProviderSignInHandler<AuthUI.IdpConfig> {
     private static final String EMAIL = "email";
     private static final String PUBLIC_PROFILE = "public_profile";
 
@@ -46,7 +49,7 @@ public class FacebookSignInHandler extends ProviderSignInBase<AuthUI.IdpConfig> 
     private final CallbackManager mCallbackManager = CallbackManager.Factory.create();
 
     public FacebookSignInHandler(Application application) {
-        super(application);
+        super(application, FacebookAuthProvider.PROVIDER_ID);
     }
 
     private static IdpResponse createIdpResponse(
@@ -65,7 +68,7 @@ public class FacebookSignInHandler extends ProviderSignInBase<AuthUI.IdpConfig> 
         List<String> permissions = getArguments().getParams()
                 .getStringArrayList(ExtraConstants.FACEBOOK_PERMISSIONS);
         permissions = new ArrayList<>(
-                permissions == null ? Collections.<String>emptyList() : permissions);
+                permissions == null ? Collections.emptyList() : permissions);
 
         // Ensure we have email and public_profile permissions
         if (!permissions.contains(EMAIL)) { permissions.add(EMAIL); }
@@ -77,7 +80,9 @@ public class FacebookSignInHandler extends ProviderSignInBase<AuthUI.IdpConfig> 
     }
 
     @Override
-    public void startSignIn(@NonNull HelperActivityBase activity) {
+    public void startSignIn(@NonNull FirebaseAuth auth,
+                            @NonNull HelperActivityBase activity,
+                            @NonNull String providerId) {
         WebDialog.setWebDialogTheme(activity.getFlowParams().themeId);
         LoginManager.getInstance().logInWithReadPermissions(activity, mPermissions);
     }
@@ -96,7 +101,7 @@ public class FacebookSignInHandler extends ProviderSignInBase<AuthUI.IdpConfig> 
     private class Callback implements FacebookCallback<LoginResult> {
         @Override
         public void onSuccess(LoginResult result) {
-            setResult(Resource.<IdpResponse>forLoading());
+            setResult(Resource.forLoading());
 
             GraphRequest request = GraphRequest.newMeRequest(result.getAccessToken(),
                     new ProfileRequest(result));
@@ -109,12 +114,12 @@ public class FacebookSignInHandler extends ProviderSignInBase<AuthUI.IdpConfig> 
 
         @Override
         public void onCancel() {
-            onError(new FacebookException());
+            setResult(Resource.forFailure(new UserCancellationException()));
         }
 
         @Override
         public void onError(FacebookException e) {
-            setResult(Resource.<IdpResponse>forFailure(new FirebaseUiException(
+            setResult(Resource.forFailure(new FirebaseUiException(
                     ErrorCodes.PROVIDER_ERROR, e)));
         }
     }
@@ -130,12 +135,12 @@ public class FacebookSignInHandler extends ProviderSignInBase<AuthUI.IdpConfig> 
         public void onCompleted(JSONObject object, GraphResponse response) {
             FacebookRequestError error = response.getError();
             if (error != null) {
-                setResult(Resource.<IdpResponse>forFailure(new FirebaseUiException(
+                setResult(Resource.forFailure(new FirebaseUiException(
                         ErrorCodes.PROVIDER_ERROR, error.getException())));
                 return;
             }
             if (object == null) {
-                setResult(Resource.<IdpResponse>forFailure(new FirebaseUiException(
+                setResult(Resource.forFailure(new FirebaseUiException(
                         ErrorCodes.PROVIDER_ERROR, "Facebook graph request failed")));
                 return;
             }

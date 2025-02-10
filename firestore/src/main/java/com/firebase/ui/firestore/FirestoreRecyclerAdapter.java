@@ -1,16 +1,17 @@
 package com.firebase.ui.firestore;
 
-import android.arch.lifecycle.Lifecycle;
-import android.arch.lifecycle.LifecycleObserver;
-import android.arch.lifecycle.LifecycleOwner;
-import android.arch.lifecycle.OnLifecycleEvent;
-import android.support.annotation.NonNull;
-import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 
 import com.firebase.ui.common.ChangeEventType;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+
+import androidx.annotation.NonNull;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.OnLifecycleEvent;
+import androidx.recyclerview.widget.RecyclerView;
 
 /**
  * RecyclerView adapter that listens to a {@link FirestoreArray} and displays its data in real
@@ -25,17 +26,19 @@ public abstract class FirestoreRecyclerAdapter<T, VH extends RecyclerView.ViewHo
 
     private static final String TAG = "FirestoreRecycler";
 
-    private final ObservableSnapshotArray<T> mSnapshots;
+    private FirestoreRecyclerOptions<T> mOptions;
+    private ObservableSnapshotArray<T> mSnapshots;
 
     /**
      * Create a new RecyclerView adapter that listens to a Firestore Query.  See {@link
      * FirestoreRecyclerOptions} for configuration options.
      */
     public FirestoreRecyclerAdapter(@NonNull FirestoreRecyclerOptions<T> options) {
+        mOptions = options;
         mSnapshots = options.getSnapshots();
 
-        if (options.getOwner() != null) {
-            options.getOwner().getLifecycle().addObserver(this);
+        if (mOptions.getOwner() != null) {
+            mOptions.getOwner().getLifecycle().addObserver(this);
         }
     }
 
@@ -55,7 +58,6 @@ public abstract class FirestoreRecyclerAdapter<T, VH extends RecyclerView.ViewHo
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     public void stopListening() {
         mSnapshots.removeChangeEventListener(this);
-        notifyDataSetChanged();
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -83,9 +85,39 @@ public abstract class FirestoreRecyclerAdapter<T, VH extends RecyclerView.ViewHo
         return mSnapshots.get(position);
     }
 
+    /**
+     * Gets the size of snapshots in adapter.
+     *
+     * @return the total count of snapshots in adapter.
+     * @see ObservableSnapshotArray#size()
+     */
     @Override
     public int getItemCount() {
         return mSnapshots.isListening(this) ? mSnapshots.size() : 0;
+    }
+
+    /**
+     * Re-initialize the Adapter with a new set of options. Can be used to change the query without
+     * re-constructing the entire adapter.
+     */
+    public void updateOptions(@NonNull FirestoreRecyclerOptions<T> options) {
+        // Tear down old options
+        boolean wasListening = mSnapshots.isListening(this);
+        if (mOptions.getOwner() != null) {
+            mOptions.getOwner().getLifecycle().removeObserver(this);
+        }
+        mSnapshots.clear();
+        stopListening();
+
+        // Set up new options
+        mOptions = options;
+        mSnapshots = options.getSnapshots();
+        if (options.getOwner() != null) {
+            options.getOwner().getLifecycle().addObserver(this);
+        }
+        if (wasListening) {
+            startListening();
+        }
     }
 
     @Override

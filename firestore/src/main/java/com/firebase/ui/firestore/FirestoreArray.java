@@ -1,8 +1,5 @@
 package com.firebase.ui.firestore;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-
 import com.firebase.ui.common.ChangeEventType;
 import com.google.firebase.firestore.DocumentChange;
 import com.google.firebase.firestore.DocumentSnapshot;
@@ -17,12 +14,15 @@ import com.google.firebase.firestore.QuerySnapshot;
 import java.util.ArrayList;
 import java.util.List;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 /**
  * Exposes a Firestore query as an observable list of objects.
  */
 public class FirestoreArray<T> extends ObservableSnapshotArray<T>
         implements EventListener<QuerySnapshot> {
-    private final Query mQuery;
+    private Query mQuery;
     private final MetadataChanges mMetadataChanges;
     private ListenerRegistration mRegistration;
 

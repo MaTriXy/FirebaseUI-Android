@@ -1,7 +1,6 @@
 package com.firebase.ui.auth.viewmodel;
 
-
-import android.arch.lifecycle.Observer;
+import android.app.Application;
 
 import com.firebase.ui.auth.FirebaseAuthAnonymousUpgradeException;
 import com.firebase.ui.auth.IdpResponse;
@@ -14,11 +13,11 @@ import com.firebase.ui.auth.testhelpers.ResourceMatchers;
 import com.firebase.ui.auth.testhelpers.TestConstants;
 import com.firebase.ui.auth.testhelpers.TestHelper;
 import com.firebase.ui.auth.viewmodel.phone.PhoneProviderResponseHandler;
+import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthUserCollisionException;
 import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.auth.GoogleAuthCredential;
 import com.google.firebase.auth.PhoneAuthCredential;
 import com.google.firebase.auth.PhoneAuthProvider;
 
@@ -30,11 +29,14 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 
 import java.util.Collections;
 
+import androidx.lifecycle.Observer;
+import androidx.test.core.app.ApplicationProvider;
+
 import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
@@ -48,7 +50,7 @@ public class PhoneProviderResponseHandlerTest {
 
     @Mock FirebaseAuth mMockAuth;
     @Mock FirebaseUser mMockUser;
-    @Mock PhoneAuthCredential mCredential;
+    PhoneAuthCredential mCredential;
     @Mock Observer<Resource<IdpResponse>> mResponseObserver;
 
     private PhoneProviderResponseHandler mHandler;
@@ -57,11 +59,12 @@ public class PhoneProviderResponseHandlerTest {
     public void setUp() {
         TestHelper.initialize();
         MockitoAnnotations.initMocks(this);
+        mCredential = PhoneAuthCredential.zzc("sessionInfo", "SmsCode");
 
-        mHandler = new PhoneProviderResponseHandler(RuntimeEnvironment.application);
+        mHandler = new PhoneProviderResponseHandler((Application) ApplicationProvider.getApplicationContext());
         FlowParameters testParams = TestHelper.getFlowParameters(Collections.singletonList(
                 PhoneAuthProvider.PROVIDER_ID));
-        mHandler.initializeForTesting(testParams, mMockAuth, null, null);
+        mHandler.initializeForTesting(testParams, mMockAuth, null);
     }
 
     @Test
@@ -77,7 +80,7 @@ public class PhoneProviderResponseHandlerTest {
 
         mHandler.startSignIn(mCredential, response);
         verify(mMockAuth).signInWithCredential(mCredential);
-        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
     @Test
@@ -95,7 +98,7 @@ public class PhoneProviderResponseHandlerTest {
         mHandler.startSignIn(mCredential, response);
 
         verify(mMockAuth.getCurrentUser()).linkWithCredential(mCredential);
-        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+        verify(mResponseObserver).onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
 
@@ -104,9 +107,13 @@ public class PhoneProviderResponseHandlerTest {
         mHandler.getOperation().observeForever(mResponseObserver);
         setupAnonymousUpgrade();
 
+        FirebaseAuthUserCollisionException ex =
+                new FirebaseAuthUserCollisionException("foo", "bar");
+        TestHelper.setPrivateField(ex, FirebaseAuthUserCollisionException.class,
+                AuthCredential.class, mCredential);
+
         when(mMockAuth.getCurrentUser().linkWithCredential(mCredential))
-                .thenReturn(AutoCompleteTask.<AuthResult>forFailure(
-                        new FirebaseAuthUserCollisionException("foo", "bar", mCredential)));
+                .thenReturn(AutoCompleteTask.forFailure(ex));
 
         IdpResponse response = new IdpResponse.Builder(new User.Builder(
                 PhoneAuthProvider.PROVIDER_ID, TestConstants.EMAIL).build())
@@ -118,7 +125,7 @@ public class PhoneProviderResponseHandlerTest {
 
         InOrder inOrder = inOrder(mResponseObserver);
         inOrder.verify(mResponseObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
 
         ArgumentCaptor<Resource<IdpResponse>> resolveCaptor =
                 ArgumentCaptor.forClass(Resource.class);
@@ -133,7 +140,7 @@ public class PhoneProviderResponseHandlerTest {
     private void setupAnonymousUpgrade() {
         FlowParameters testParams = TestHelper.getFlowParameters(Collections.singletonList(
                 PhoneAuthProvider.PROVIDER_ID), true);
-        mHandler.initializeForTesting(testParams, mMockAuth, null, null);
+        mHandler.initializeForTesting(testParams, mMockAuth, null);
         when(mMockAuth.getCurrentUser()).thenReturn(mMockUser);
         when(mMockUser.isAnonymous()).thenReturn(true);
     }

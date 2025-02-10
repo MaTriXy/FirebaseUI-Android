@@ -14,8 +14,6 @@
 
 package com.firebase.ui.database;
 
-import android.support.annotation.NonNull;
-import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 
 import com.firebase.ui.common.ChangeEventType;
@@ -30,11 +28,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import androidx.annotation.NonNull;
+
 public class FirebaseIndexArray<T> extends ObservableSnapshotArray<T>
         implements ChangeEventListener {
     private static final String TAG = "FirebaseIndexArray";
 
-    private final DatabaseReference mDataRef;
+    private DatabaseReference mDataRef;
     private final Map<DatabaseReference, ValueEventListener> mRefs = new HashMap<>();
 
     private final FirebaseArray<String> mKeySnapshots;
@@ -68,13 +68,7 @@ public class FirebaseIndexArray<T> extends ObservableSnapshotArray<T>
                               @NonNull SnapshotParser<T> parser) {
         super(parser);
         mDataRef = dataRef;
-        mKeySnapshots = new FirebaseArray<>(keyQuery, new SnapshotParser<String>() {
-            @NonNull
-            @Override
-            public String parseSnapshot(@NonNull DataSnapshot snapshot) {
-                return snapshot.getKey();
-            }
-        });
+        mKeySnapshots = new FirebaseArray<>(keyQuery, snapshot -> snapshot.getKey());
     }
 
     @Override

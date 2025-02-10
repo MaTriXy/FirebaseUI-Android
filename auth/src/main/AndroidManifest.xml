@@ -7,6 +7,16 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Used to check if a browser is available before launching phone auth -->
+    <!-- See ui/phone/PhoneNumberVerificationHandler.isBrowserAvailable() -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
+        </intent>
+    </queries>
+
     <application>
 
         <meta-data
@@ -62,6 +72,25 @@
         <activity
             android:name=".ui.email.WelcomeBackPasswordPrompt"
             android:label="@string/fui_title_welcome_back_password_prompt"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.email.WelcomeBackEmailLinkPrompt"
+            android:label="@string/fui_title_welcome_back_password_prompt"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.email.EmailLinkCatcherActivity"
+            android:exported="false"
+            android:label=""
+            android:theme="@style/FirebaseUI.Transparent"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.email.EmailLinkErrorRecoveryActivity"
+            android:label="@string/fui_sign_in_default"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 

@@ -24,18 +24,24 @@ import android.text.style.ScaleXSpan;
 import android.util.AttributeSet;
 
 import com.firebase.ui.auth.R;
+import com.firebase.ui.auth.TestApplication;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+
+import androidx.test.core.app.ApplicationProvider;
 
 import static junit.framework.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(application = TestApplication.class)
 public class SpacedEditTextTest {
     private static final float SPACING_PROPORTION = 1.1f;
 
@@ -43,15 +49,16 @@ public class SpacedEditTextTest {
 
     @Before
     public void setUp() {
-        AttributeSet attrs = mock(AttributeSet.class);
-        Context context = mock(Context.class);
-        TypedArray array = mock(TypedArray.class);
+        Context context = spy(ApplicationProvider.getApplicationContext());
+        AttributeSet attrs = Robolectric.buildAttributeSet().build();
 
+        TypedArray array = mock(TypedArray.class);
         when(array.getFloat(R.styleable.SpacedEditText_spacingProportion, 1))
                 .thenReturn(SPACING_PROPORTION);
+
         when(context.obtainStyledAttributes(attrs, R.styleable.SpacedEditText)).thenReturn(array);
-        mSpacedEditText = new SpacedEditText(RuntimeEnvironment.application, attrs);
-        mSpacedEditText.initAttrs(context, attrs);
+
+        mSpacedEditText = new SpacedEditText(context, attrs);
     }
 
     @Test

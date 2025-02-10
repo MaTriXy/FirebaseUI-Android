@@ -1,10 +1,8 @@
 package com.firebase.ui.auth.util.data;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.RestrictTo;
-import android.support.annotation.VisibleForTesting;
-
+import com.firebase.ui.auth.AuthUI;
 import com.firebase.ui.auth.data.model.FlowParameters;
+import com.firebase.ui.auth.ui.HelperActivityBase;
 import com.google.android.gms.tasks.Continuation;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.FirebaseApp;
@@ -12,6 +10,11 @@ import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.EmailAuthProvider;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.OAuthProvider;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.RestrictTo;
+import androidx.annotation.VisibleForTesting;
 
 /**
  * Utilities to help with Anonymous user upgrade.
@@ -48,8 +51,12 @@ public class AuthOperationManager {
         // Use a different FirebaseApp so that the anonymous user state is not lost in our
         // original FirebaseAuth instance.
         if (mScratchAuth == null) {
-            FirebaseApp app = FirebaseApp.getInstance(flowParameters.appName);
-            mScratchAuth = FirebaseAuth.getInstance(getScratchApp(app));
+            AuthUI authUI = AuthUI.getInstance(flowParameters.appName);
+            mScratchAuth = FirebaseAuth.getInstance(getScratchApp(authUI.getApp()));
+
+            if (authUI.isUseEmulator()) {
+                mScratchAuth.useEmulator(authUI.getEmulatorHost(), authUI.getEmulatorPort());
+            }
         }
         return mScratchAuth;
     }
@@ -92,14 +99,19 @@ public class AuthOperationManager {
                                      final FlowParameters flowParameters) {
         return getScratchAuth(flowParameters)
                 .signInWithCredential(credential)
-                .continueWithTask(new Continuation<AuthResult, Task<AuthResult>>() {
-                    @Override
-                    public Task<AuthResult> then(@NonNull Task<AuthResult> task) throws Exception {
-                        if (task.isSuccessful()) {
-                            return task.getResult().getUser().linkWithCredential(credentialToLink);
-                        }
-                        return task;
+                .continueWithTask(task -> {
+                    if (task.isSuccessful()) {
+                        return task.getResult().getUser().linkWithCredential(credentialToLink);
                     }
+                    return task;
                 });
+    }
+
+    @NonNull
+    public Task<AuthResult> safeGenericIdpSignIn(@NonNull final HelperActivityBase activity,
+                                                 @NonNull final OAuthProvider provider,
+                                                 @NonNull final FlowParameters flowParameters) {
+        return getScratchAuth(flowParameters)
+                .startActivityForSignInWithProvider(activity, provider);
     }
 }

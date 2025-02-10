@@ -3,8 +3,6 @@ package com.firebase.ui.auth.ui;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
@@ -12,8 +10,10 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import com.firebase.ui.auth.R;
+import com.google.android.material.progressindicator.CircularProgressIndicator;
 
-import me.zhanghai.android.materialprogressbar.MaterialProgressBar;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
 
 /**
  * Base classes for activities that are just simple overlays.
@@ -25,7 +25,7 @@ public class InvisibleActivityBase extends HelperActivityBase {
     private static final long MIN_SPINNER_MS = 750;
 
     private Handler mHandler = new Handler();
-    private MaterialProgressBar mProgressBar;
+    private CircularProgressIndicator mProgressBar;
 
     // Last time that the progress bar was actually shown
     private long mLastShownTime = 0;
@@ -36,7 +36,7 @@ public class InvisibleActivityBase extends HelperActivityBase {
         setContentView(R.layout.fui_activity_invisible);
 
         // Create an indeterminate, circular progress bar in the app's theme
-        mProgressBar = new MaterialProgressBar(new ContextThemeWrapper(this, getFlowParams().themeId));
+        mProgressBar = new CircularProgressIndicator(new ContextThemeWrapper(this, getFlowParams().themeId));
         mProgressBar.setIndeterminate(true);
         mProgressBar.setVisibility(View.GONE);
 
@@ -63,24 +63,16 @@ public class InvisibleActivityBase extends HelperActivityBase {
 
     @Override
     public void hideProgress() {
-        doAfterTimeout(new Runnable() {
-            @Override
-            public void run() {
-                mLastShownTime = 0;
-                mProgressBar.setVisibility(View.GONE);
-            }
+        doAfterTimeout(() -> {
+            mLastShownTime = 0;
+            mProgressBar.setVisibility(View.GONE);
         });
     }
 
     @Override
     public void finish(int resultCode, @Nullable Intent intent) {
         setResult(resultCode, intent);
-        doAfterTimeout(new Runnable() {
-            @Override
-            public void run() {
-                finish();
-            }
-        });
+        doAfterTimeout(() -> finish());
     }
 
     /**

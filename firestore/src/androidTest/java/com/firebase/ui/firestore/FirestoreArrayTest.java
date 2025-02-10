@@ -16,9 +16,6 @@ package com.firebase.ui.firestore;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.support.annotation.NonNull;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
 import android.util.Log;
 
 import com.firebase.ui.common.ChangeEventType;
@@ -44,6 +41,10 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+
+import androidx.annotation.NonNull;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import static org.junit.Assert.assertTrue;
 
@@ -103,7 +104,7 @@ public class FirestoreArrayTest {
 
     @Before
     public void setUp() throws Exception {
-        FirebaseApp app = getAppInstance(InstrumentationRegistry.getContext());
+        FirebaseApp app = getAppInstance(ApplicationProvider.getApplicationContext());
 
         // Configure Firestore and disable persistence
         FirebaseFirestore.getInstance(app)
@@ -126,22 +127,14 @@ public class FirestoreArrayTest {
         mListener = mArray.addChangeEventListener(new LoggingListener());
 
         // Add some initial data
-        runAndVerify(new Callable<Task<?>>() {
-            @Override
-            public Task<?> call() {
-                List<Task> tasks = new ArrayList<>();
-                for (int i = 0; i < INITIAL_SIZE; i++) {
-                    tasks.add(mCollectionRef.document().set(new IntegerDocument(i)));
-                }
+        runAndVerify(() -> {
+            List<Task> tasks = new ArrayList<>();
+            for (int i = 0; i < INITIAL_SIZE; i++) {
+                tasks.add(mCollectionRef.document().set(new IntegerDocument(i)));
+            }
 
-                return Tasks.whenAll(tasks.toArray(new Task[tasks.size()]));
-            }
-        }, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return mArray.size() == INITIAL_SIZE;
-            }
-        });
+            return Tasks.whenAll(tasks.toArray(new Task[tasks.size()]));
+        }, () -> mArray.size() == INITIAL_SIZE);
     }
 
     @After
@@ -158,17 +151,8 @@ public class FirestoreArrayTest {
      */
     @Test
     public void testPushIncreasesSize() throws Exception {
-        runAndVerify(new Callable<Task<?>>() {
-            @Override
-            public Task<?> call() {
-                return mCollectionRef.document().set(new IntegerDocument(4));
-            }
-        }, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return mArray.size() == (INITIAL_SIZE + 1);
-            }
-        });
+        runAndVerify(() -> mCollectionRef.document().set(new IntegerDocument(4)),
+                () -> mArray.size() == (INITIAL_SIZE + 1));
     }
 
     /**
@@ -179,20 +163,12 @@ public class FirestoreArrayTest {
     public void testAddToEnd() throws Exception {
         final int value = 4;
 
-        runAndVerify(new Callable<Task<?>>() {
-            @Override
-            public Task<?> call() {
-                return mCollectionRef.document().set(new IntegerDocument(value));
+        runAndVerify(() -> mCollectionRef.document().set(new IntegerDocument(value)), () -> {
+            if (mArray.size() == (INITIAL_SIZE + 1)) {
+                return mArray.get(mArray.size() - 1).field == value;
             }
-        }, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                if (mArray.size() == (INITIAL_SIZE + 1)) {
-                    return mArray.get(mArray.size() - 1).field == value;
-                }
 
-                return false;
-            }
+            return false;
         });
     }
 
@@ -204,20 +180,12 @@ public class FirestoreArrayTest {
     public void testAddToBeginning() throws Exception {
         final int value = -1;
 
-        runAndVerify(new Callable<Task<?>>() {
-            @Override
-            public Task<?> call() {
-                return mCollectionRef.document().set(new IntegerDocument(value));
+        runAndVerify(() -> mCollectionRef.document().set(new IntegerDocument(value)), () -> {
+            if (mArray.size() == (INITIAL_SIZE + 1)) {
+                return mArray.get(0).field == value;
             }
-        }, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                if (mArray.size() == (INITIAL_SIZE + 1)) {
-                    return mArray.get(0).field == value;
-                }
 
-                return false;
-            }
+            return false;
         });
     }
 
@@ -232,12 +200,7 @@ public class FirestoreArrayTest {
 
         // Run the setup action and release the semaphore when it is complete
         Task task = setup.call();
-        task.addOnCompleteListener(new OnCompleteListener() {
-            @Override
-            public void onComplete(@NonNull Task task) {
-                semaphore.release();
-            }
-        });
+        task.addOnCompleteListener(task1 -> semaphore.release());
 
         // Wait for the verification condition to be met, or time out
         boolean isDone = false;

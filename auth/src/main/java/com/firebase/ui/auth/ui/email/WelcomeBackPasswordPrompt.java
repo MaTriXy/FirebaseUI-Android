@@ -14,20 +14,11 @@
 
 package com.firebase.ui.auth.ui.email;
 
-import android.arch.lifecycle.ViewModelProviders;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Typeface;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
-import android.support.annotation.StringRes;
-import android.support.design.widget.TextInputLayout;
-import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
-import android.text.style.StyleSpan;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -37,18 +28,29 @@ import android.widget.TextView;
 
 import com.firebase.ui.auth.ErrorCodes;
 import com.firebase.ui.auth.FirebaseAuthAnonymousUpgradeException;
+import com.firebase.ui.auth.FirebaseUiException;
 import com.firebase.ui.auth.IdpResponse;
 import com.firebase.ui.auth.R;
 import com.firebase.ui.auth.data.model.FlowParameters;
 import com.firebase.ui.auth.ui.AppCompatBase;
 import com.firebase.ui.auth.util.ExtraConstants;
+import com.firebase.ui.auth.util.FirebaseAuthError;
 import com.firebase.ui.auth.util.data.PrivacyDisclosureUtils;
 import com.firebase.ui.auth.util.data.ProviderUtils;
 import com.firebase.ui.auth.util.ui.ImeHelper;
+import com.firebase.ui.auth.util.ui.TextHelper;
 import com.firebase.ui.auth.viewmodel.ResourceObserver;
 import com.firebase.ui.auth.viewmodel.email.WelcomeBackPasswordHandler;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.auth.AuthCredential;
+import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
+import androidx.annotation.StringRes;
+import androidx.lifecycle.ViewModelProvider;
 
 /**
  * Activity to link a pre-existing email/password account to a new IDP sign-in by confirming the
@@ -94,11 +96,7 @@ public class WelcomeBackPasswordPrompt extends AppCompatBase
                 getString(R.string.fui_welcome_back_password_prompt_body, email);
 
         SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder(bodyText);
-        int emailStart = bodyText.indexOf(email);
-        spannableStringBuilder.setSpan(new StyleSpan(Typeface.BOLD),
-                emailStart,
-                emailStart + email.length(),
-                Spannable.SPAN_INCLUSIVE_INCLUSIVE);
+        TextHelper.boldAllOccurencesOfText(spannableStringBuilder, bodyText, email);
 
         TextView bodyTextView = findViewById(R.id.welcome_back_password_body);
         bodyTextView.setText(spannableStringBuilder);
@@ -108,7 +106,7 @@ public class WelcomeBackPasswordPrompt extends AppCompatBase
         findViewById(R.id.trouble_signing_in).setOnClickListener(this);
 
         // Initialize ViewModel with arguments
-        mHandler = ViewModelProviders.of(this).get(WelcomeBackPasswordHandler.class);
+        mHandler = new ViewModelProvider(this).get(WelcomeBackPasswordHandler.class);
         mHandler.init(getFlowParams());
 
         // Observe the state of the main auth operation
@@ -125,9 +123,21 @@ public class WelcomeBackPasswordPrompt extends AppCompatBase
                 if (e instanceof FirebaseAuthAnonymousUpgradeException) {
                     IdpResponse response = ((FirebaseAuthAnonymousUpgradeException) e).getResponse();
                     finish(ErrorCodes.ANONYMOUS_UPGRADE_MERGE_CONFLICT, response.toIntent());
-                } else {
-                    mPasswordLayout.setError(getString(getErrorMessage(e)));
+                    return;
                 }
+
+                if (e instanceof FirebaseAuthException) {
+                    FirebaseAuthException authEx = (FirebaseAuthException) e;
+                    FirebaseAuthError error = FirebaseAuthError.fromException(authEx);
+                    if (error == FirebaseAuthError.ERROR_USER_DISABLED) {
+                        IdpResponse resp = IdpResponse.from(
+                                new FirebaseUiException(ErrorCodes.ERROR_USER_DISABLED));
+                        finish(RESULT_CANCELED, resp.toIntent());
+                        return;
+                    }
+                }
+
+                mPasswordLayout.setError(getString(getErrorMessage(e)));
             }
         });
 
@@ -163,7 +173,7 @@ public class WelcomeBackPasswordPrompt extends AppCompatBase
     private void validateAndSignIn(String password) {
         // Check for null or empty password
         if (TextUtils.isEmpty(password)) {
-            mPasswordLayout.setError(getString(R.string.fui_required_field));
+            mPasswordLayout.setError(getString(R.string.fui_error_invalid_password));
             return;
         } else {
             mPasswordLayout.setError(null);

@@ -1,6 +1,6 @@
 package com.firebase.ui.auth.viewmodel;
 
-import android.support.annotation.RestrictTo;
+import androidx.annotation.RestrictTo;
 
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public final class RequestCodes {
@@ -39,6 +39,24 @@ public final class RequestCodes {
 
     /** Request code for retrieving a GitHub credential. */
     public static final int GITHUB_PROVIDER = 111;
+
+    /** Request code for starting an email link welcome back flow. */
+    public static final int WELCOME_BACK_EMAIL_LINK_FLOW = 112;
+
+    /** Request code for recovering from opening an email link from the wrong device */
+    public static final int EMAIL_LINK_WRONG_DEVICE_FLOW = 113;
+
+    /** Request code for recovering from opening an invalid email link */
+    public static final int EMAIL_LINK_INVALID_LINK_FLOW = 114;
+
+    /** Request code for prompting the user to enter their email to finish the sign in */
+    public static final int EMAIL_LINK_PROMPT_FOR_EMAIL_FLOW = 115;
+
+    /** Request code for prompting the user to enter their email to finish the sign in */
+    public static final int EMAIL_LINK_CROSS_DEVICE_LINKING_FLOW = 116;
+
+    /** Request code for starter a generic IDP sign-in flow */
+    public static final int GENERIC_IDP_SIGN_IN_FLOW = 117;
 
     private RequestCodes() {
         throw new AssertionError("No instance for you!");

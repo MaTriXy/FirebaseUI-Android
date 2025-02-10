@@ -21,7 +21,6 @@ package com.firebase.ui.auth.ui.phone;
 import android.content.Context;
 import android.telephony.TelephonyManager;
 
-import com.firebase.ui.auth.BuildConfig;
 import com.firebase.ui.auth.data.model.CountryInfo;
 import com.firebase.ui.auth.data.model.PhoneNumber;
 import com.firebase.ui.auth.util.data.PhoneNumberUtils;
@@ -85,7 +84,7 @@ public class PhoneNumberUtilsTest {
     }
 
     @Test
-    @Config(constants = BuildConfig.class, sdk = 16)
+    @Config(sdk = 16)
     public void testFormatNumberToE164_belowApi21() {
         String validPhoneNumber = "+919994947354";
         CountryInfo indiaCountryInfo = new CountryInfo(new Locale("", "IN"), 91);

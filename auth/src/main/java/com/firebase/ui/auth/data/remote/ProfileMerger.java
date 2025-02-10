@@ -1,8 +1,6 @@
 package com.firebase.ui.auth.data.remote;
 
 import android.net.Uri;
-import android.support.annotation.NonNull;
-import android.support.annotation.RestrictTo;
 import android.text.TextUtils;
 
 import com.firebase.ui.auth.IdpResponse;
@@ -14,6 +12,9 @@ import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.UserProfileChangeRequest;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.RestrictTo;
 
 /**
  * Merges an existing account's profile with the new user's profile.
@@ -51,11 +52,6 @@ public class ProfileMerger implements Continuation<AuthResult, Task<AuthResult>>
                         .setPhotoUri(photoUri)
                         .build())
                 .addOnFailureListener(new TaskFailureLogger(TAG, "Error updating profile"))
-                .continueWithTask(new Continuation<Void, Task<AuthResult>>() {
-                    @Override
-                    public Task<AuthResult> then(@NonNull Task<Void> task) {
-                        return Tasks.forResult(authResult);
-                    }
-                });
+                .continueWithTask(task1 -> Tasks.forResult(authResult));
     }
 }

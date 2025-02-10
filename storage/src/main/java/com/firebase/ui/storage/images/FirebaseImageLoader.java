@@ -1,7 +1,5 @@
 package com.firebase.ui.storage.images;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.util.Log;
 
 import com.bumptech.glide.Priority;
@@ -21,6 +19,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.security.MessageDigest;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 /**
  * ModelLoader implementation to download images from FirebaseStorage with Glide.
@@ -97,6 +98,21 @@ public class FirebaseImageLoader implements ModelLoader<StorageReference, InputS
         public void updateDiskCacheKey(@NonNull MessageDigest digest) {
             digest.update(mRef.getPath().getBytes(Charset.defaultCharset()));
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            FirebaseStorageKey key = (FirebaseStorageKey) o;
+
+            return mRef.equals(key.mRef);
+        }
+
+        @Override
+        public int hashCode() {
+            return mRef.hashCode();
+        }
     }
 
     private static class FirebaseStorageFetcher implements DataFetcher<InputStream> {
@@ -114,19 +130,11 @@ public class FirebaseImageLoader implements ModelLoader<StorageReference, InputS
                              @NonNull final DataCallback<? super InputStream> callback) {
             mStreamTask = mRef.getStream();
             mStreamTask
-                    .addOnSuccessListener(new OnSuccessListener<StreamDownloadTask.TaskSnapshot>() {
-                        @Override
-                        public void onSuccess(StreamDownloadTask.TaskSnapshot snapshot) {
-                            mInputStream = snapshot.getStream();
-                            callback.onDataReady(mInputStream);
-                        }
+                    .addOnSuccessListener(snapshot -> {
+                        mInputStream = snapshot.getStream();
+                        callback.onDataReady(mInputStream);
                     })
-                    .addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            callback.onLoadFailed(e);
-                        }
-                    });
+                    .addOnFailureListener(e -> callback.onLoadFailed(e));
         }
 
         @Override

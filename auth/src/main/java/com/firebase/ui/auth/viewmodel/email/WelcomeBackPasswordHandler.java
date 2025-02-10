@@ -1,9 +1,6 @@
 package com.firebase.ui.auth.viewmodel.email;
 
 import android.app.Application;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
 
 import com.firebase.ui.auth.AuthUI;
 import com.firebase.ui.auth.IdpResponse;
@@ -22,6 +19,10 @@ import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.EmailAuthProvider;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
 
 /**
  * Handles the logic for {@link com.firebase.ui.auth.ui.email.WelcomeBackPasswordPrompt} including
@@ -45,7 +46,7 @@ public class WelcomeBackPasswordHandler extends SignInViewModelBase {
                             @NonNull final String password,
                             @NonNull final IdpResponse inputResponse,
                             @Nullable final AuthCredential credential) {
-        setResult(Resource.<IdpResponse>forLoading());
+        setResult(Resource.forLoading());
 
         // Store the password before signing in so it can be used for later credential building
         mPendingPassword = password;
@@ -60,6 +61,7 @@ public class WelcomeBackPasswordHandler extends SignInViewModelBase {
         } else {
             // New credential for an IDP (Phone or Social)
             outputResponse = new IdpResponse.Builder(inputResponse.getUser())
+                    .setPendingCredential(inputResponse.getCredentialForLinking())
                     .setToken(inputResponse.getIdpToken())
                     .setSecret(inputResponse.getIdpSecret())
                     .build();
@@ -73,18 +75,8 @@ public class WelcomeBackPasswordHandler extends SignInViewModelBase {
             if (AuthUI.SOCIAL_PROVIDERS.contains(inputResponse.getProviderType())) {
                 // Add the provider to the same account before triggering a merge failure.
                 authOperationManager.safeLink(credToValidate, credential, getArguments())
-                        .addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                            @Override
-                            public void onSuccess(AuthResult result) {
-                                handleMergeFailure(credToValidate);
-                            }
-                        })
-                        .addOnFailureListener(new OnFailureListener() {
-                            @Override
-                            public void onFailure(@NonNull Exception e) {
-                                setResult(Resource.<IdpResponse>forFailure(e));
-                            }
-                        });
+                        .addOnSuccessListener(result -> handleMergeFailure(credToValidate))
+                        .addOnFailureListener(e -> setResult(Resource.forFailure(e)));
             } else {
                 // The user has not tried to log in with a federated IDP containing the same email.
                 // In this case, we just need to verify that the credential they provided is valid.
@@ -92,50 +84,34 @@ public class WelcomeBackPasswordHandler extends SignInViewModelBase {
                 // A merge failure occurs because the account exists and the user is anonymous.
                 authOperationManager.validateCredential(credToValidate, getArguments())
                         .addOnCompleteListener(
-                                new OnCompleteListener<AuthResult>() {
-                                    @Override
-                                    public void onComplete(@NonNull Task<AuthResult> task) {
-                                        if (task.isSuccessful()) {
-                                            handleMergeFailure(credToValidate);
-                                        } else {
-                                            setResult(Resource.<IdpResponse>forFailure(task.getException()));
-                                        }
+                                task -> {
+                                    if (task.isSuccessful()) {
+                                        handleMergeFailure(credToValidate);
+                                    } else {
+                                        setResult(Resource.forFailure(task.getException()));
                                     }
                                 });
             }
         } else {
             // Kick off the flow including signing in, linking accounts, and saving with SmartLock
             getAuth().signInWithEmailAndPassword(email, password)
-                    .continueWithTask(new Continuation<AuthResult, Task<AuthResult>>() {
-                        @Override
-                        public Task<AuthResult> then(@NonNull Task<AuthResult> task) throws Exception {
-                            // Forward task failure by asking for result
-                            AuthResult result = task.getResult(Exception.class);
+                    .continueWithTask(task -> {
+                        // Forward task failure by asking for result
+                        AuthResult result = task.getResult(Exception.class);
 
-                            // Task succeeded, link user if necessary
-                            if (credential == null) {
-                                return Tasks.forResult(result);
-                            } else {
-                                return result.getUser()
-                                        .linkWithCredential(credential)
-                                        .continueWithTask(new ProfileMerger(outputResponse))
-                                        .addOnFailureListener(new TaskFailureLogger(TAG,
-                                                "linkWithCredential+merge failed."));
-                            }
+                        // Task succeeded, link user if necessary
+                        if (credential == null) {
+                            return Tasks.forResult(result);
+                        } else {
+                            return result.getUser()
+                                    .linkWithCredential(credential)
+                                    .continueWithTask(new ProfileMerger(outputResponse))
+                                    .addOnFailureListener(new TaskFailureLogger(TAG,
+                                            "linkWithCredential+merge failed."));
                         }
                     })
-                    .addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                        @Override
-                        public void onSuccess(AuthResult result) {
-                            handleSuccess(outputResponse, result);
-                        }
-                    })
-                    .addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            setResult(Resource.<IdpResponse>forFailure(e));
-                        }
-                    })
+                    .addOnSuccessListener(result -> handleSuccess(outputResponse, result))
+                    .addOnFailureListener(e -> setResult(Resource.forFailure(e)))
                     .addOnFailureListener(
                             new TaskFailureLogger(TAG, "signInWithEmailAndPassword failed."));
         }

@@ -1,5 +1,23 @@
+plugins {
+  id("com.android.application")
+}
+
+// This is always set to 'true' on Travis CI
+val inCiBuild = System.getenv("CI") == "true"
+
 android {
+    compileSdk = Config.SdkVersions.compile
+
     defaultConfig {
+        minSdk = Config.SdkVersions.min
+        targetSdk = Config.SdkVersions.target
+
+        versionName = Config.version
+        versionCode = 1
+
+        resourcePrefix("fui_")
+        vectorDrawables.useSupportLibrary = true
+
         multiDexEnabled = true
     }
 
@@ -22,8 +40,32 @@ android {
         }
     }
 
+    compileOptions {    
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        // Common lint options across all modules
+        disable += mutableSetOf(
+            "IconExpectedSize",
+            "InvalidPackage", // Firestore uses GRPC which makes lint mad
+            "NewerVersionAvailable", "GradleDependency", // For reproducible builds
+            "SelectableText", "SyntheticAccessor", // We almost never care about this
+            "MediaCapabilities"
+        )
+
+        checkAllWarnings = true
+        warningsAsErrors = true
+        abortOnError = true
+
+        baseline = file("$rootDir/library/quality/lint-baseline.xml")
+    }
+
     variantFilter {
-        if (name == "debug") setIgnore(true)
+        if (inCiBuild && name == "debug") {
+            ignore = true
+        }
     }
 }
 
@@ -33,8 +75,7 @@ dependencies {
     implementation(project(":database"))
     implementation(project(":storage"))
 
-    implementation(Config.Libs.Firebase.core)
-    implementation(Config.Libs.Arch.extensions)
+    implementation(Config.Libs.Androidx.lifecycleExtensions)
 }
 
 apply(plugin = "com.google.gms.google-services")

@@ -1,11 +1,11 @@
 package com.firebase.ui.common;
 
-import android.support.annotation.CallSuper;
-import android.support.annotation.NonNull;
-
 import java.util.AbstractList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+
+import androidx.annotation.CallSuper;
+import androidx.annotation.NonNull;
 
 /**
  * Exposes a collection of {@link S} items in a database as a {@link List} of {@link T} objects. To
@@ -158,6 +158,14 @@ public abstract class BaseObservableSnapshotArray<S, E, L extends BaseChangeEven
      */
     public boolean isListening(@NonNull L listener) {
         return mListeners.contains(listener);
+    }
+
+    /**
+     * Clear data and notify all listeners.
+     */
+    public void clear() {
+        getSnapshots().clear();
+        notifyOnDataChanged();
     }
 
     protected final void notifyOnChildChanged(@NonNull ChangeEventType type,

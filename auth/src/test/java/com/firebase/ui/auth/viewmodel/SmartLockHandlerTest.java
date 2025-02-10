@@ -1,7 +1,7 @@
 package com.firebase.ui.auth.viewmodel;
 
 import android.app.Activity;
-import android.arch.lifecycle.Observer;
+import android.app.Application;
 
 import com.firebase.ui.auth.IdpResponse;
 import com.firebase.ui.auth.data.model.FlowParameters;
@@ -27,9 +27,11 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 
 import java.util.Collections;
+
+import androidx.lifecycle.Observer;
+import androidx.test.core.app.ApplicationProvider;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -55,12 +57,12 @@ public class SmartLockHandlerTest {
         TestHelper.initialize();
         MockitoAnnotations.initMocks(this);
 
-        mHandler = new SmartLockHandler(RuntimeEnvironment.application);
+        mHandler = new SmartLockHandler((Application) ApplicationProvider.getApplicationContext());
 
         FlowParameters testParams = TestHelper.getFlowParameters(Collections.singletonList(
                 EmailAuthProvider.PROVIDER_ID));
 
-        mHandler.initializeForTesting(testParams, mMockAuth, mMockCredentials, null);
+        mHandler.initializeForTesting(testParams, mMockAuth, mMockCredentials);
         mHandler.setResponse(new IdpResponse.Builder(
                 new User.Builder(EmailAuthProvider.PROVIDER_ID, TestConstants.EMAIL).build()
         ).build());
@@ -71,12 +73,12 @@ public class SmartLockHandlerTest {
         mHandler.getOperation().observeForever(mResultObserver);
 
         when(mMockCredentials.save(any(Credential.class)))
-                .thenReturn(AutoCompleteTask.<Void>forSuccess(null));
+                .thenReturn(AutoCompleteTask.forSuccess(null));
 
         mHandler.saveCredentials(TestHelper.getMockFirebaseUser(), TestConstants.PASSWORD, null);
 
-        verify(mResultObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
-        verify(mResultObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+        verify(mResultObserver).onChanged(argThat(ResourceMatchers.isLoading()));
+        verify(mResultObserver).onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
     @Test
@@ -86,7 +88,7 @@ public class SmartLockHandlerTest {
         // Mock credentials to throw an RAE
         ResolvableApiException mockRae = mock(ResolvableApiException.class);
         when(mMockCredentials.save(any(Credential.class)))
-                .thenReturn(AutoCompleteTask.<Void>forFailure(mockRae));
+                .thenReturn(AutoCompleteTask.forFailure(mockRae));
 
         // Kick off save
         mHandler.saveCredentials(TestHelper.getMockFirebaseUser(), TestConstants.PASSWORD, null);
@@ -94,7 +96,7 @@ public class SmartLockHandlerTest {
         InOrder inOrder = inOrder(mResultObserver);
 
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
 
         // Make sure we get a resolution
         ArgumentCaptor<Resource<IdpResponse>> resolveCaptor =
@@ -108,7 +110,7 @@ public class SmartLockHandlerTest {
 
         // Make sure we get success
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+                .onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
     @Test
@@ -116,12 +118,12 @@ public class SmartLockHandlerTest {
         mHandler.getOperation().observeForever(mResultObserver);
 
         when(mMockCredentials.save(any(Credential.class)))
-                .thenReturn(AutoCompleteTask.<Void>forFailure(new Exception("FAILED")));
+                .thenReturn(AutoCompleteTask.forFailure(new Exception("FAILED")));
 
         mHandler.saveCredentials(TestHelper.getMockFirebaseUser(), TestConstants.PASSWORD, null);
 
-        verify(mResultObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
-        verify(mResultObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isFailure()));
+        verify(mResultObserver).onChanged(argThat(ResourceMatchers.isLoading()));
+        verify(mResultObserver).onChanged(argThat(ResourceMatchers.isFailure()));
     }
 
 }

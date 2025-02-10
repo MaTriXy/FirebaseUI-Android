@@ -17,8 +17,10 @@ package com.firebase.ui.auth.testhelpers;
 import android.os.Parcel;
 
 import com.google.firebase.auth.AdditionalUserInfo;
+import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.OAuthProvider;
 
 public final class FakeAuthResult implements AuthResult {
     public static final AuthResult INSTANCE = new FakeAuthResult();
@@ -43,6 +45,14 @@ public final class FakeAuthResult implements AuthResult {
     @Override
     public AdditionalUserInfo getAdditionalUserInfo() {
         return FakeAdditionalUserInfo.INSTANCE;
+    }
+
+    @Override
+    public AuthCredential getCredential() {
+        return OAuthProvider.newCredentialBuilder("provider")
+                .setAccessToken("foo")
+                .setIdToken("bar")
+                .build();
     }
 
     @Override

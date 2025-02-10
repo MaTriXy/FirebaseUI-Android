@@ -18,9 +18,6 @@
 package com.firebase.ui.auth.util.data;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.SparseArray;
@@ -33,6 +30,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
@@ -357,6 +358,7 @@ public final class PhoneNumberUtils {
         map.put(380, singletonList("UA"));
         map.put(381, singletonList("RS"));
         map.put(382, singletonList("ME"));
+        map.put(383, singletonList("XK"));
         map.put(385, singletonList("HR"));
         map.put(386, singletonList("SI"));
         map.put(387, singletonList("BA"));
@@ -470,7 +472,6 @@ public final class PhoneNumberUtils {
         map.remove("TA");
         map.put("HM", 672);
         map.put("GS", 500);
-        map.put("XK", 381);
 
         COUNTRY_TO_ISO_CODES = Collections.unmodifiableMap(map);
     }

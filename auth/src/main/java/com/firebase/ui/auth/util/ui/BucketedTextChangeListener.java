@@ -19,13 +19,14 @@
 package com.firebase.ui.auth.util.ui;
 
 import android.annotation.SuppressLint;
-import android.support.annotation.RestrictTo;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.widget.EditText;
 
 import java.util.Collections;
+
+import androidx.annotation.RestrictTo;
 
 /**
  * Listens for changes to a text field that has hyphens and replaces with the character being typed:
@@ -46,7 +47,7 @@ public final class BucketedTextChangeListener implements TextWatcher {
          * Idempotent function invoked by the listener when the edit text changes and is of expected
          * length
          */
-        void whileComplete();
+        void whenComplete();
 
         /**
          * Idempotent function invoked by the listener when the edit text changes and is not of
@@ -114,7 +115,7 @@ public final class BucketedTextChangeListener implements TextWatcher {
 
         // 4) Callback listeners waiting on content to be of expected length
         if (enteredContentLength == mExpectedContentLength && mCallback != null) {
-            mCallback.whileComplete();
+            mCallback.whenComplete();
         } else if (mCallback != null) {
             mCallback.whileIncomplete();
         }

@@ -1,13 +1,7 @@
 package com.firebase.ui.auth.ui.email;
 
-import android.arch.lifecycle.ViewModelProviders;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
-import android.support.design.widget.TextInputLayout;
-import android.support.v4.app.FragmentActivity;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -34,9 +28,16 @@ import com.firebase.ui.auth.util.ui.fieldvalidators.PasswordFieldValidator;
 import com.firebase.ui.auth.util.ui.fieldvalidators.RequiredFieldValidator;
 import com.firebase.ui.auth.viewmodel.ResourceObserver;
 import com.firebase.ui.auth.viewmodel.email.EmailProviderResponseHandler;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.auth.EmailAuthProvider;
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
+import androidx.fragment.app.FragmentActivity;
+import androidx.lifecycle.ViewModelProvider;
 
 /**
  * Fragment to display an email/name/password sign up form for new users.
@@ -93,7 +94,7 @@ public class RegisterEmailFragment extends FragmentBase implements
             mUser = User.getUser(savedInstanceState);
         }
 
-        mHandler = ViewModelProviders.of(this).get(EmailProviderResponseHandler.class);
+        mHandler = new ViewModelProvider(this).get(EmailProviderResponseHandler.class);
         mHandler.init(getFlowParams());
         mHandler.getOperation().observe(this, new ResourceObserver<IdpResponse>(
                 this, R.string.fui_progress_dialog_signing_up) {
@@ -154,7 +155,8 @@ public class RegisterEmailFragment extends FragmentBase implements
                 mPasswordInput,
                 getResources().getInteger(R.integer.fui_min_password_length));
         mNameValidator = requireName
-                ? new RequiredFieldValidator(nameInput)
+                ? new RequiredFieldValidator(nameInput,
+                      getResources().getString(R.string.fui_missing_first_and_last_name))
                 : new NoOpValidator(nameInput);
         mEmailFieldValidator = new EmailFieldValidator(mEmailInput);
 
@@ -204,12 +206,7 @@ public class RegisterEmailFragment extends FragmentBase implements
     }
 
     private void safeRequestFocus(final View v) {
-        v.post(new Runnable() {
-            @Override
-            public void run() {
-                v.requestFocus();
-            }
-        });
+        v.post(() -> v.requestFocus());
     }
 
     @Override
@@ -221,7 +218,6 @@ public class RegisterEmailFragment extends FragmentBase implements
             throw new IllegalStateException("Activity must implement CheckEmailListener");
         }
         mListener = (AnonymousUpgradeListener) activity;
-
     }
 
     @Override

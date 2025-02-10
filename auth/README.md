@@ -31,7 +31,10 @@ and [Web](https://github.com/firebase/firebaseui-web/).
 
 1. [Demo](#demo)
 1. [Configuration](#configuration)
+   1. [Basics](#basics)
+   1. [Themes](#themes)
    1. [Provider config](#identity-provider-configuration)
+   1. [Auth emulator config](#auth-emulator-configuration)
 1. [Usage instructions](#using-firebaseui-for-authentication)
    1. [AuthUI sign-in](#authui-sign-in)
    1. [Handling responses](#handling-the-sign-in-response)
@@ -39,16 +42,13 @@ and [Web](https://github.com/firebase/firebaseui-web/).
    1. [Sign out](#sign-out)
    1. [Account deletion](#deleting-accounts)
    1. [Upgrading Anonymous Users](#upgrading-anonymous-users)
-   1. [Auth flow chart](#authentication-flow-chart)
-1. [Customization](#ui-customization)
-   1. [Required setup](#required-setup)
-   1. [Themes](#themes)
+1. [UI Customization](#ui-customization)
+   1. [Custom layout](#custom-layout)
    1. [Strings](#strings)
 1. [OAuth scopes](#oauth-scope-customization)
    1. [Google](#google-1)
    1. [Facebook](#facebook-1)
    1. [Twitter](#twitter-1)
-   1. [GitHub](#github-1)
 
 ## Demo
 
@@ -65,22 +65,15 @@ Gradle, add the dependency:
 ```groovy
 dependencies {
     // ...
-    implementation 'com.firebaseui:firebase-ui-auth:4.2.0'
-
-    // Required only if GitHub OAuth support is required
-    implementation 'com.firebaseui:firebase-ui-auth-github:4.2.0'
+    implementation 'com.firebaseui:firebase-ui-auth:8.0.2'
 
     // Required only if Facebook login support is required
-    // Find the latest Facebook SDK releases here: https://goo.gl/Ce5L94
-    implementation 'com.facebook.android:facebook-login:4.x'
-
-    // Required only if Twitter login support is required
-    // Find the latest Twitter SDK releases here: https://goo.gl/E5wZvQ
-    implementation("com.twitter.sdk.android:twitter-core:3.x@aar") { transitive = true }
+    // Find the latest Facebook SDK releases here: https://github.com/facebook/facebook-android-sdk/blob/master/CHANGELOG.md
+    implementation 'com.facebook.android:facebook-login:8.1.0'
 }
 ```
 
-As of version `2.1.0` FirebaseUI includes translations for all string resources. In order to
+FirebaseUI includes translations for all string resources. In order to
 ensure that you only get the translations relevant to your application, we recommend changing the
 `resConfigs` of your application module:
 
@@ -98,10 +91,98 @@ android {
 See the [Android documentation](https://developer.android.com/studio/build/shrink-code.html#unused-alt-resources)
 for more information.
 
+### Basics
+
+There are three main steps to adding FirebaseUI in your app:
+
+  1. Build a sign in `Intent` using `AuthUI#createSignInIntentBuilder()`
+  2. Launch the `Intent` using an `ActivityResultLauncher`
+  3. Handle the result.
+  
+```java
+private ActivityResultLauncher<Intent> signInLauncher = registerForActivityResult(
+  new FirebaseAuthUIActivityResultContract(),
+  (result) -> {
+    // Handle the FirebaseAuthUIAuthenticationResult
+    // ...                
+  });
+
+// ... 
+
+private void startSignIn() {
+  Intent signInIntent = AuthUI.getInstance()
+      .createSignInIntentBuilder()
+      // ... options ...
+      .build();
+
+  signInLauncher.launch(signInIntent);
+}
+```
+
+### Themes
+
+As of version `8.0.0` FirebaseUI uses Material Design Components and themes. To use FirebaseUI seamlessly in your app you should provide a theme resource which provides Material Design color attributes ([read more here](https://material.io/blog/android-material-theme-color)).
+
+At a minimum your theme should define the following attributes:
+
+  * `colorPrimary`
+  * `colorPrimaryVariant`
+  * `colorAccent`
+  * `android:statusBarColor` (API > 21) or `colorPrimaryDark` (API < 21)
+
+#### Using your app theme
+
+To configure FirebaseUI to match your app's exising theme, simply pass your main theme attribute to `setTheme()`:
+
+This would then be used in the construction of the sign-in intent:
+
+```java
+Intent signInIntent = 
+    AuthUI.getInstance(this).createSignInIntentBuilder()
+        // ...
+        .setTheme(R.style.AppTheme)
+        .build())
+```
+
+#### Using a custom theme
+
+For example, here is a simple green sign-in theme:
+
+```xml
+<style name="GreenTheme" parent="FirebaseUI">
+    <item name="colorPrimary">@color/material_green_500</item>
+    <item name="colorPrimaryVariant">@color/material_green_700</item>
+    <item name="colorAccent">@color/material_purple_a700</item>
+    <item name="android:colorBackground">@color/material_green_50</item>
+
+    <!-- On API 21+ you can use android:statusBarColor -->
+    <item name="colorPrimaryDark">@color/material_green_700</item>
+</style>
+```
+
+With associated colors:
+
+```xml
+<color name="material_green_50">#E8F5E9</color>
+<color name="material_green_500">#4CAF50</color>
+<color name="material_green_700">#388E3C</color>
+<color name="material_purple_a700">#AA00FF</color>
+```
+
+This would then be used in the construction of the sign-in intent:
+
+```java
+Intent signinIntent =
+    AuthUI.getInstance(this).createSignInIntentBuilder()
+        // ...
+        .setTheme(R.style.GreenTheme)
+        .build();
+```
+
 ### Identity provider configuration
 
-In order to use either Google, Facebook or Twitter accounts with your app, ensure that
-these authentication methods are first configured in the Firebase console.
+In order to use either Google, Facebook, Twitter, Microsoft, Apple, GitHub or Yahoo accounts with
+your app, ensure that these authentication methods are first configured in the Firebase console.
 
 #### Google
 
@@ -124,133 +205,57 @@ the [Facebook developer dashboard](https://developers.facebook.com):
 </resources>
 ```
 
-#### Twitter
+#### Microsoft, Apple, Twitter, GitHub and Yahoo
 
-If support for Twitter Sign-in is also required, define the resource strings
-`twitter_consumer_key` and `twitter_consumer_secret` to match the values of your
-Twitter app as reported by the [Twitter application manager](https://apps.twitter.com/).
+No FirebaseUI configuration is required for these providers.
 
-```xml
-<resources>
-  <string name="twitter_consumer_key" translatable="false">YOUR_CONSUMER_KEY</string>
-  <string name="twitter_consumer_secret" translatable="false">YOUR_CONSUMER_SECRET</string>
-</resources>
+We support the use of scopes and custom parameters for these providers. For example:
+
+```java
+List<String> scopes =
+    new ArrayList<String>() {
+      {
+        add("mail.read");
+        add("calendars.read");
+      }
+    };
+
+Map<String, String> customParams = new HashMap<>();
+customParams.put("tenant", "TENANT_ID");
+
+IdpConfig microsoftConfig = new IdpConfig.MicrosoftBuilder()
+                    .setScopes(scopes)
+                    .setCustomParameters(customParams)
+                    .build();
+selectedProviders.add(microsoftConfig);
 ```
 
-In addition, you must enable the "Request email addresses from users" permission
-in the "Permissions" tab of your Twitter app.
+Note: unlike other sign-in methods, signing in with these providers involves the use of a
+[Custom Chrome Tab](https://developer.chrome.com/multidevice/android/customtabs).
 
-In order to resolve the Twitter SDK, add the following repository to your `build.gradle`:
+##### Twitter
 
-```groovy
-allprojects {
-    repositories {
-        // ...
-        maven { url 'https://maven.fabric.io/public' }
-    }
-}
+You must enable the "Request email addresses from users" permission in the "Permissions" tab of your
+Twitter app.
+
+### Auth emulator configuration
+
+As of version `7.0.0` FirebaseUI is compatible with the Firebase Authentication emulator:
+https://firebase.google.com/docs/emulator-suite
+
+Use the `useEmulator` method to point an AuthUI instance at the emulator:
+
+```java
+AuthUI authUI = AuthUI.getInstance();
+
+// "10.0.2.2" is the special host value for contacting "localhost" from within
+// the Android Emulator
+authUI.useEmulator("10.0.2.2", 9099);
 ```
 
-#### GitHub
-
-WARNING: GitHub OAuth is not for the faint of heart. Getting it setup correctly is an invested
-process and may take a half-hour or two. Ready? Let's begin.
-
-##### Wait, but _why_?
-
-GitHub requires that override redirect URIs only extend the base URI configured in the dashboard for
-[security reasons](https://tools.ietf.org/html/rfc6749#section-10.6). What does this mean? For
-GitHub auth to work on the web, the full `https://project-id.firebaseapp.com/__/auth/handler`
-redirect URI must be specified, thus preventing us Android devs from using a custom scheme (since we
-can only extend the base URI with extra path elements).
-
-As a side note, if you don't care about Web or iOS support, you can
-simply override our `GitHubLoginActivity`'s intent filters with your custom scheme to skip all these
-steps... However, this will make adding support for Web or iOS difficult should you decided to do so
-in the future—hence us not officially support this method.
-
-##### Adding secrets
-
-Hop over to your [GitHub app](https://github.com/settings/developers) and grab its client ID and
-Secret to put them in your resources:
-
-```xml
-<resources>
-    <string name="github_client_id" translatable="false">YOUR_CLIENT_ID</string>
-    <string name="github_client_secret" translatable="false">YOUR_CLIENT_SECRET</string>
-</resources>
-```
-
-##### Adding your Firebase web host
-
-Next, find your project id in the Firebase Console's project settings and add it to your resources
-in the form `project-id.firebaseapp.com`:
-
-```xml
-<resources>
-    <string name="firebase_web_host" translatable="false">project-id.firebaseapp.com</string>
-</resources>
-```
-
-##### Getting a SHA-256 hash of your keystore
-
-[Run the `keytool` utility](https://developers.google.com/android/guides/client-auth) found in your
-JDK's installation folder to get a SHA-256 hash of your release keystore. The command should look
-something like this (but for your release keystore):
-
-```sh
-keytool -list -v \
-    -keystore ~/.android/debug.keystore \
-    -alias androiddebugkey \
-    -storepass android \
-    -keypass android
-```
-
-Protip: you might as well also grab the release SHA-1 hash and the debug hashes to add them to the
-Firebase Console since they're useful in other contexts. Also, adding debug hashes will let you test
-all this without having to use a release build.
-
-##### Deploying a Firebase Hosting solution
-
-If you're already using Firebase Hosting, give yourself a pat on the back and move on. Otherwise,
-read on! Go through [this tutorial](https://firebase.google.com/docs/hosting/quickstart) and make
-sure to say no when asked to
-[redirect](https://firebase.google.com/docs/hosting/url-redirects-rewrites) everything to a single
-page. If you're already doing that, exclude `.well-known/assetlinks.json`.
-
-##### Adding asset links
-
-So close, you're almost there! Follow step 1 of
-[this tutorial](https://developers.google.com/digital-asset-links/v1/getting-started#quick-usage-example)
-with your own package name and SHA-256 hash gathered earlier. Now add the resulting JSON to
-`.well-known/assetlinks.json` on your Firebase Hosting website and re-deploy it. Your JSON should
-look something like this:
-
-```js
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target" : {
-    "namespace": "android_app",
-    "package_name": "com.your.package.name",
-    "sha256_cert_fingerprints": ["your_sha_256_fingerprint"]
-  }
-}]
-```
-
-##### Putting it all together
-
-You should now have:
-- String resources with your secrets and Firebase web host
-- SHA hashes in the Firebase Console
-- A Firebase Hosting website with asset links
-
-Congrats, you did it! All that's left to do is [kick off the sign-in flow](#authui-sign-in).
-
-##### Help, I'm stuck!
-
-In all likelihood, your [asset links](#adding-asset-links) aren't configured correctly. Make sure
-that `https://project-id.firebaseapp.com/.well-known/assetlinks.json` resolves without redirects. If
-all else fails, FUI team members will help you out on StackOverflow with the `FirebaseUI` tag.
+By default Android blocks connections to `http://` endpoints such as the Auth emulator.
+To allow your app to communicate with the Auth emulator, use a [network security configuration](https://developer.android.com/training/articles/security-config)
+or set `android:usesCleartextTraffic="true"` in `AndroidManifest.xml`.
 
 ## Using FirebaseUI for authentication
 
@@ -300,21 +305,15 @@ If no customization is required, and only email authentication is required, the 
 can be started as follows:
 
 ```java
-// Choose an arbitrary request code value
-private static final int RC_SIGN_IN = 123;
+// Get an instance of AuthUI based on the default app
+Intent signInIntent =
+    AuthUI.getInstance().createSignInIntentBuilder().build();
 
-// ...
-
-startActivityForResult(
-    // Get an instance of AuthUI based on the default app
-    AuthUI.getInstance().createSignInIntentBuilder().build(),
-    RC_SIGN_IN);
+signInLauncher.launch(signInIntent);
 ```
 
-To kick off the FirebaseUI sign in flow, call startActivityForResult(...) on the sign in Intent you built.
-The second parameter (RC_SIGN_IN) is a request code you define to identify the request when the result
-is returned to your app in onActivityResult(...). See the [response codes](#response-codes) section below for more
-details on receiving the results of the sign in flow.
+To kick off the FirebaseUI sign in flow, use an `ActivityResultLauncher` to launch the Intent you built.
+See the [response codes](#response-codes) section below for more details on receiving the results of the sign in flow.
 
 ##### Adding providers
 
@@ -322,34 +321,89 @@ You can enable sign-in providers like Google Sign-In or Facebook Log In by calli
 `setAvailableProviders` method:
 
 ```java
-startActivityForResult(
+Intent signInIntent =
         AuthUI.getInstance()
                 .createSignInIntentBuilder()
                 .setAvailableProviders(Arrays.asList(
                         new AuthUI.IdpConfig.GoogleBuilder().build(),
                         new AuthUI.IdpConfig.FacebookBuilder().build(),
                         new AuthUI.IdpConfig.TwitterBuilder().build(),
-                        new AuthUI.IdpConfig.GitHubBuilder().build(),
+                        new AuthUI.IdpConfig.MicrosoftBuilder().build(),
+                        new AuthUI.IdpConfig.YahooBuilder().build(),
+                        new AuthUI.IdpConfig.AppleBuilder().build(),
                         new AuthUI.IdpConfig.EmailBuilder().build(),
                         new AuthUI.IdpConfig.PhoneBuilder().build(),
                         new AuthUI.IdpConfig.AnonymousBuilder().build()))
-                .build(),
-        RC_SIGN_IN);
+                .build();
 ```
+
+##### Configuring Email Link Sign In
+
+To use email link sign in, you will first need to enable it in the Firebase Console. Additionally, you will
+also have to enable Firebase Dynamic Links.
+
+You can enable email link sign in by calling the `enableEmailLinkSignIn` on an `EmailBuilder` instance. You will also need
+to provide a valid `ActionCodeSettings` object with `setHandleCodeInApp` set to true. Additionally, you need to allowlist the
+URL you pass to `setUrl`; you can do so in the Firebase Console (Authentication -> Sign in Methods -> Authorized domains).
+
+```java
+
+ActionCodeSettings actionCodeSettings = ActionCodeSettings.newBuilder()
+        .setAndroidPackageName(/*yourPackageName*/, /*installIfNotAvailable*/true, /*minimumVersion*/null)
+        .setHandleCodeInApp(true)
+        .setUrl("https://google.com") // This URL needs to be allowlisted
+        .build();
+
+Intent signInIntent =
+        AuthUI.getInstance()
+                .createSignInIntentBuilder()
+                .setAvailableProviders(Arrays.asList(
+                        new AuthUI.IdpConfig.EmailBuilder().enableEmailLinkSignIn()
+                        .setActionCodeSettings(actionCodeSettings).build())
+                .build();
+```
+
+If you want to catch the link in a specific activity, please follow the steps outlined [here](https://firebase.google.com/docs/auth/android/email-link-auth).
+Otherwise, the link will redirect to your launcher activity.
+
+Once you catch the deep link, you will need to call verify that we can handle it for you. If we can, you need to then
+pass it to us via `setEmailLink`.
+
+```java
+if (AuthUI.canHandleIntent(getIntent())) {
+   if (getIntent().getExtras() == null) {
+         return;
+   }
+   String link = getIntent().getData().toString();
+   if (link != null) {
+      Intent signInIntent =
+              AuthUI.getInstance()
+                      .createSignInIntentBuilder()
+                      .setEmailLink(link)
+                      .setAvailableProviders(getAvailableProviders())
+                      .build();
+      signInLauncher.launch(signInIntent);
+   }
+}
+```
+
+#### Cross device support
+
+We support cross device email link sign in for the normal flows. It is not supported with anonymous user upgrade. By default,
+cross device support is enabled. You can disable it by calling `setForceSameDevice` on the `EmailBuilder` instance.
 
 ##### Adding a ToS and privacy policy
 
 A terms of service URL and privacy policy URL are generally required:
 
 ```java
-startActivityForResult(
+Intent signInIntent =
     AuthUI.getInstance()
         .createSignInIntentBuilder()
         .setAvailableProviders(...)
         .setTosAndPrivacyPolicyUrls("https://superapp.example.com/terms-of-service.html",
                                     "https://superapp.example.com/privacy-policy.html")
-        .build(),
-    RC_SIGN_IN);
+        .build();
 ```
 
 ##### Smart Lock
@@ -361,12 +415,11 @@ to disable Smart Lock for testing or development. To disable Smart Lock, you can
 `setIsSmartLockEnabled` method when building your sign-in Intent:
 
 ```java
-startActivityForResult(
+Intent signInIntent =
     AuthUI.getInstance()
         .createSignInIntentBuilder()
         .setIsSmartLockEnabled(false)
-        .build(),
-    RC_SIGN_IN);
+        .build();
 ```
 
 ###### Smart Lock hints
@@ -375,12 +428,11 @@ If you'd like to keep Smart Lock's "hints" but disable the saving/retrieving of 
 you can use the two-argument version of `setIsSmartLockEnabled`:
 
 ```java
-startActivityForResult(
+Intent signInIntent =
     AuthUI.getInstance()
         .createSignInIntentBuilder()
         .setIsSmartLockEnabled(false, true)
-        .build(),
-    RC_SIGN_IN);
+        .build();
 ```
 
 ###### Smart Lock in dev builds
@@ -389,12 +441,11 @@ It is often desirable to disable Smart Lock in development but enable it in prod
 this, you can use the `BuildConfig.DEBUG` flag to control Smart Lock:
 
 ```java
-startActivityForResult(
+Intent signInIntent =
     AuthUI.getInstance()
         .createSignInIntentBuilder()
         .setIsSmartLockEnabled(!BuildConfig.DEBUG /* credentials */, true /* hints */)
-        .build(),
-    RC_SIGN_IN);
+        .build();
 ```
 
 ##### Phone number authentication customization
@@ -432,43 +483,42 @@ IdpConfig phoneConfigWithDefaultNumber = new IdpConfig.PhoneBuilder()
 
 You can limit the countries shown in the country selector list. By default, all countries are shown.
 
-You can provide a list of countries to whitelist or blacklist. You can populate these lists with
+You can provide a list of countries to allowlist or blocklist. You can populate these lists with
 ISO (alpha-2) and E164 formatted country codes.
 
 ```java
-List<String> whitelistedCountries = new ArrayList<String>();
-whitelistedCountries.add("+1");
-whitelistedCountries.add("gr");
+List<String> allowedCountries = new ArrayList<String>();
+allowedCountries.add("+1");
+allowedCountries.add("gr");
 
-IdpConfig phoneConfigWithWhitelistedCountries = new IdpConfig.PhoneBuilder()
-        .setWhitelistedCountries(whitelistedCountries)
+IdpConfig phoneConfigWithAllowedCountries = new IdpConfig.PhoneBuilder()
+        .setAllowedCountries(allowedCountries)
         .build();
 ```
 All countries with the country code +1 will be present in the selector as well as Greece ('gr').
 
-You may want to exclude a few countries from the list and avoid creating a whitelist with
-many countries. You can instead provide a list of countries to blacklist. By doing so, all countries
+You may want to exclude a few countries from the list and avoid creating a allowlist with
+many countries. You can instead provide a list of countries to blocklist. By doing so, all countries
 excluding the ones you provide will be in the selector.
 
 ```java
-List<String> blacklistedCountries = new ArrayList<String>();
-blacklistedCountries.add("+1");
-blacklistedCountries.add("gr");
+List<String> blockedCountries = new ArrayList<String>();
+blockedCountries.add("+1");
+blockedCountries.add("gr");
 
-IdpConfig phoneConfigWithBlacklistedCountries = new IdpConfig.PhoneBuilder()
-        .setBlacklistedCountries(blacklistedCountries)
+IdpConfig phoneConfigWithBlockedCountries = new IdpConfig.PhoneBuilder()
+        .setBlockedCountries(blockedCountries)
         .build();
 ```
 
 The country code selector will exclude all countries with a country code of +1 and Greece ('gr').
 
-Note: You can't provide both a list of countries to whitelist and blacklist. If you do, a runtime
+Note: You can't provide both a list of countries to allowlist and blocklist. If you do, a runtime
 exception will be thrown.
 
 This change is purely UI based. We do not restrict users from signing in with their phone number.
 They will simply be unable to choose their country in the selector, but there may be another country
 sharing the same country code (e.g. US and CA are +1).
-
 
 #####
 
@@ -484,32 +534,28 @@ Typically, the only recourse for most apps if sign in fails is to ask
 the user to sign in again later, or proceed with anonymous sign-in if supported.
 
 ```java
-protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-    super.onActivityResult(requestCode, resultCode, data);
-    // RC_SIGN_IN is the request code you passed into startActivityForResult(...) when starting the sign in flow.
-    if (requestCode == RC_SIGN_IN) {
-        IdpResponse response = IdpResponse.fromResultIntent(data);
+private void onSignInResult(FirebaseAuthUIAuthenticationResult result) {
+    IdpResponse response = result.getIdpResponse();
 
+    if (result.getResultCode() == RESULT_OK) {
         // Successfully signed in
-        if (resultCode == RESULT_OK) {
-            startActivity(SignedInActivity.createIntent(this, response));
-            finish();
-        } else {
-            // Sign in failed
-            if (response == null) {
-                // User pressed back button
-                showSnackbar(R.string.sign_in_cancelled);
-                return;
-            }
-
-            if (response.getError().getErrorCode() == ErrorCodes.NO_NETWORK) {
-                showSnackbar(R.string.no_internet_connection);
-                return;
-            }
-
-            showSnackbar(R.string.unknown_error);
-            Log.e(TAG, "Sign-in error: ", response.getError());
+        startActivity(SignedInActivity.createIntent(this, response));
+        finish();
+    } else {
+        // Sign in failed
+        if (response == null) {
+            // User pressed back button
+            showSnackbar(R.string.sign_in_cancelled);
+            return;
         }
+
+        if (response.getError().getErrorCode() == ErrorCodes.NO_NETWORK) {
+            showSnackbar(R.string.no_internet_connection);
+            return;
+        }
+
+        showSnackbar(R.string.unknown_error);
+        Log.e(TAG, "Sign-in error: ", response.getError());
     }
 }
 ```
@@ -529,17 +575,17 @@ To retrieve the ID token that the IDP returned, you can extract an `IdpResponse`
 Intent.
 
 ```java
-protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-    super.onActivityResult(requestCode, resultCode, data);
-    if (resultCode == RESULT_OK) {
-        IdpResponse idpResponse = IdpResponse.fromResultIntent(data);
-        startActivity(new Intent(this, WelcomeBackActivity.class)
-                .putExtra("my_token", idpResponse.getIdpToken()));
+private void onSignInResult(FirebaseAuthUIAuthenticationResult result) {
+    if (result.getResultCode() == RESULT_OK) {
+        // Successfully signed in
+       IdpResponse response = result.getIdpResponse();
+       startActivity(new Intent(this, WelcomeBackActivity.class)
+               .putExtra("my_token", response.getIdpToken()));
     }
 }
 ```
 
-Twitter also returns an AuthToken Secret which can be accessed with `idpResponse.getIdpSecret()`.
+Twitter also returns an AuthToken Secret which can be accessed with `response.getIdpSecret()`.
 
 #### User metadata
 
@@ -669,13 +715,12 @@ when you configure the sign-in UI (this option is disabled by default).
 
 For example:
 ```java
-startActivityForResult(
+Intent signInIntent =
     AuthUI.getInstance()
         .createSignInIntentBuilder()
         .enableAnonymousUsersAutoUpgrade()
         ...
-        .build(),
-    RC_SIGN_IN);
+        .build();
 ```
 
 With this enabled, FirebaseUI will link the credential on sign-in with the anonymous account
@@ -698,57 +743,70 @@ The process of storing the anonymous users data, signing in with the credential,
 data over to the existing account is left to the developer.
 
 When linking is unsuccessful due to user collision, an error with code
-`ErrorCodes.ANONYMOUS_UPGRADE_MERGE_CONFLICT` will be returned to `onActivityResult()`. A valid
+`ErrorCodes.ANONYMOUS_UPGRADE_MERGE_CONFLICT` will be returned to the callback of your `ActivityResultLauncher`. A valid
 non-anonymous credential can be obtained from the `IdpResponse` via `getCredentialForLinking()`.
 
 **Example:**
 ```java
-@Override
-protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-    super.onActivityResult(requestCode, resultCode, data);
-    if (requestCode == RC_SIGN_IN) {
-        IdpResponse response = IdpResponse.fromResultIntent(data);
-        if (resultCode == RESULT_OK) {
-            // Successful sign in
-        } else {
-            // Sign in failed
-            if (response.getError().getErrorCode() == ErrorCodes.ANONYMOUS_UPGRADE_MERGE_CONFLICT) {
-                // Store relevant anonymous user data
-                ...
-                // Get the non-anoymous credential from the response
-                AuthCredential nonAnonymousCredential = response.getCredentialForLinking();
-                // Sign in with credential 
-                FirebaseAuth.getInstance().signInWithCredential(nonAnonymousCredential)
-                    .addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                        @Override
-                        public void onSuccess(AuthResult result) {
-                            // Copy over anonymous user data to signed in user
-                            ...
-                        }
-                    });
-            }
+private void onSignInResult(FirebaseAuthUIAuthenticationResult result) {
+    IdpResponse response = result.getIdpResponse();
+
+    if (result.getResultCode() == RESULT_OK) {
+        // Successfully signed in
+        // ...
+    } else {
+        // Sign in failed
+        if (response.getError().getErrorCode() == ErrorCodes.ANONYMOUS_UPGRADE_MERGE_CONFLICT) {
+            // Store relevant anonymous user data
+            ...
+            // Get the non-anonymous credential from the response
+            AuthCredential nonAnonymousCredential = response.getCredentialForLinking();
+            // Sign in with credential 
+            FirebaseAuth.getInstance().signInWithCredential(nonAnonymousCredential)
+                .addOnSuccessListener(new OnSuccessListener<AuthResult>() {
+                    @Override
+                    public void onSuccess(AuthResult result) {
+                        // Copy over anonymous user data to signed in user
+                        ...
+                    }
+                });
         }
-        updateUI();
     }
+    updateUI();
 }
 ```
 
-### Authentication flow chart
+### Custom Layout
 
-The authentication flow implemented on Android is more complex than on other
-platforms, due to the availability of Smart Lock for Passwords. It is
-represented in the following diagram:
+The first screen shown in most cases is the auth method picker screen, where the user selects
+from a list of authentication methods. While customization in other screens of FirebaseUI is
+limited to themes, this screen can be fully customized with your own XML layout.
 
-![FirebaseUI authentication flow on Android](flow.png)
+To customize the auth method picker screen, build an `AuthMethodPickerLayout` object and pass
+it to the `SignInIntentBuilder` before launching the AuthUI flow:
 
-## UI customization
+```java
+// You must provide a custom layout XML resource and configure at least one
+// provider button ID. It's important that that you set the button ID for every provider
+// that you have enabled. 
+AuthMethodPickerLayout customLayout = new AuthMethodPickerLayout
+    .Builder(R.layout.your_custom_layout_xml)
+    .setGoogleButtonId(R.id.bar)
+    .setEmailButtonId(R.id.foo)
+    // ...
+    .setTosAndPrivacyPolicyId(R.id.baz)
+    .build();
+    
+Intent signInIntent =
+    AuthUI.getInstance(this).createSignInIntentBuilder()
+        // ...
+        .setAuthMethodPickerLayout(customLayout)
+        .build();
+```
 
-To use FirebaseUI Auth's sign-in flows, you must provide an `app_name` string and use the
-AppCompat color attributes in your app.
+### Strings
 
-### Required setup
-
-First, ensure an `app_name` resource is defined your `strings.xml` file like so:
+Ensure an `app_name` resource is defined your `strings.xml` file like so:
 
 ```xml
 <resources>
@@ -757,62 +815,7 @@ First, ensure an `app_name` resource is defined your `strings.xml` file like so:
 </resources>
 ```
 
-Second, ensure the three standard AppCompat color resources are defined with your own values:
-
-```xml
-<style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
-    <!-- Required for sign-in flow styling -->
-    <item name="colorPrimary">@color/colorPrimary</item>
-    <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
-    <item name="colorAccent">@color/colorAccent</item>
-</style>
-```
-
-### Themes
-
-If you would like more control over FirebaseUI's styling, you can define your own custom style
-to override certain or all styling attributes. For example, a green sign-in theme:
-
-```xml
-<style name="GreenTheme" parent="FirebaseUI">
-    <!-- Required for sign-in flow styling -->
-    <item name="colorPrimary">@color/material_green_500</item>
-    <item name="colorPrimaryDark">@color/material_green_700</item>
-    <item name="colorAccent">@color/material_purple_a700</item>
-
-    <item name="colorControlNormal">@color/material_green_500</item>
-    <item name="colorControlActivated">@color/material_lime_a700</item>
-    <item name="colorControlHighlight">@color/material_green_a200</item>
-    <item name="android:windowBackground">@color/material_green_50</item>
-</style>
-```
-
-With associated colors:
-
-```xml
-<color name="material_green_50">#E8F5E9</color>
-<color name="material_green_500">#4CAF50</color>
-<color name="material_green_700">#388E3C</color>
-<color name="material_green_a200">#69F0AE</color>
-<color name="material_lime_a700">#AEEA00</color>
-<color name="material_purple_a700">#AA00FF</color>
-```
-
-This would then be used in the construction of the sign-in intent:
-
-```java
-startActivityForResult(
-    AuthUI.getInstance(this).createSignInIntentBuilder()
-        // ...
-        .setTheme(R.style.GreenTheme)
-        .build());
-```
-
-Your application theme could also simply be used, rather than defining a new one.
-
-### Strings
-
-If you wish to change the string messages, the existing strings can be overridden
+If you wish to change other strings in the UI, the existing strings can be overridden
 by name in your application. See the module's [strings.xml](src/main/res/values/strings.xml) file
 and simply redefine a string to change it:
 
@@ -841,12 +844,11 @@ AuthUI.IdpConfig googleIdp = new AuthUI.IdpConfig.GoogleBuilder()
         .setScopes(Arrays.asList(Scopes.GAMES))
         .build();
 
-startActivityForResult(
+Intent signInIntent =
         AuthUI.getInstance()
                 .createSignInIntentBuilder()
                 .setAvailableProviders(Arrays.asList(googleIdp, ...))
-                .build(),
-        RC_SIGN_IN);
+                .build();
 ```
 
 ### Facebook
@@ -863,36 +865,13 @@ AuthUI.IdpConfig facebookIdp = new AuthUI.IdpConfig.FacebookBuilder()
         .setPermissions(Arrays.asList("user_friends"))
         .build();
 
-startActivityForResult(
+Intent signInIntent =
         AuthUI.getInstance()
                 .createSignInIntentBuilder()
                 .setAvailableProviders(Arrays.asList(facebookIdp, ...))
-                .build(),
-        RC_SIGN_IN);
+                .build();
 ```
 
 ### Twitter
 
 Twitter permissions can only be configured through [Twitter's developer console](https://apps.twitter.com/).
-
-### GitHub
-
-By default, FirebaseUI requests the `user:email` permission when performing OAuth. If you would like
-to request additional permissions from the user, call `setPermissions` on the
-`AuthUI.IdpConfig.GitHubBuilder` when initializing FirebaseUI.
-
-```java
-// For a list of permissions, see:
-// https://developer.github.com/apps/building-oauth-apps/scopes-for-oauth-apps/#available-scopes
-
-AuthUI.IdpConfig gitHubIdp = new AuthUI.IdpConfig.GitHubBuilder()
-        .setPermissions(Arrays.asList("gist"))
-        .build();
-
-startActivityForResult(
-        AuthUI.getInstance()
-                .createSignInIntentBuilder()
-                .setAvailableProviders(Arrays.asList(gitHubIdp, ...))
-                .build(),
-        RC_SIGN_IN);
-```

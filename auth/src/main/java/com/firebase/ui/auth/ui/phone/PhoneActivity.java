@@ -14,18 +14,14 @@
 
 package com.firebase.ui.auth.ui.phone;
 
-import android.arch.lifecycle.ViewModelProviders;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
-import android.support.design.widget.TextInputLayout;
 import android.widget.Toast;
 
 import com.firebase.ui.auth.ErrorCodes;
 import com.firebase.ui.auth.FirebaseAuthAnonymousUpgradeException;
+import com.firebase.ui.auth.FirebaseUiException;
 import com.firebase.ui.auth.IdpResponse;
 import com.firebase.ui.auth.R;
 import com.firebase.ui.auth.data.model.FlowParameters;
@@ -37,8 +33,15 @@ import com.firebase.ui.auth.util.ExtraConstants;
 import com.firebase.ui.auth.util.FirebaseAuthError;
 import com.firebase.ui.auth.viewmodel.ResourceObserver;
 import com.firebase.ui.auth.viewmodel.phone.PhoneProviderResponseHandler;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.PhoneAuthProvider;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
+import androidx.fragment.app.FragmentManager;
+import androidx.lifecycle.ViewModelProvider;
 
 /**
  * Activity to control the entire phone verification flow. Plays host to {@link
@@ -59,7 +62,7 @@ public class PhoneActivity extends AppCompatBase {
         setContentView(R.layout.fui_activity_register_phone);
 
         final PhoneProviderResponseHandler handler =
-                ViewModelProviders.of(this).get(PhoneProviderResponseHandler.class);
+                new ViewModelProvider(this).get(PhoneProviderResponseHandler.class);
         handler.init(getFlowParams());
         handler.getOperation().observe(this, new ResourceObserver<IdpResponse>(
                 this, R.string.fui_progress_dialog_signing_in) {
@@ -74,7 +77,7 @@ public class PhoneActivity extends AppCompatBase {
             }
         });
 
-        mPhoneVerifier = ViewModelProviders.of(this).get(PhoneNumberVerificationHandler.class);
+        mPhoneVerifier = new ViewModelProvider(this).get(PhoneNumberVerificationHandler.class);
         mPhoneVerifier.init(getFlowParams());
         mPhoneVerifier.onRestoreInstanceState(savedInstanceState);
         mPhoneVerifier.getOperation().observe(this, new ResourceObserver<PhoneVerification>(
@@ -83,7 +86,18 @@ public class PhoneActivity extends AppCompatBase {
             protected void onSuccess(@NonNull PhoneVerification verification) {
                 if (verification.isAutoVerified()) {
                     Toast.makeText(
-                            PhoneActivity.this, R.string.fui_auto_verified, Toast.LENGTH_LONG).show();
+                            PhoneActivity.this,
+                            R.string.fui_auto_verified,
+                            Toast.LENGTH_LONG
+                    ).show();
+
+                    FragmentManager manager = getSupportFragmentManager();
+                    if (manager.findFragmentByTag(SubmitConfirmationCodeFragment.TAG) != null) {
+                        // Ensure the submit code screen isn't visible if there's no code to submit.
+                        // It's possible to get into this state when an SMS is sent, but then
+                        // automatically retrieved.
+                        manager.popBackStack();
+                    }
                 }
 
                 handler.startSignIn(verification.getCredential(), new IdpResponse.Builder(
@@ -146,10 +160,16 @@ public class PhoneActivity extends AppCompatBase {
             IdpResponse response = ((FirebaseAuthAnonymousUpgradeException) e).getResponse();
             finish(ErrorCodes.ANONYMOUS_UPGRADE_MERGE_CONFLICT, response.toIntent());
         } else if (e instanceof FirebaseAuthException) {
-            errorView.setError(getErrorMessage(
-                    FirebaseAuthError.fromException((FirebaseAuthException) e)));
+            FirebaseAuthError error = FirebaseAuthError.fromException((FirebaseAuthException) e);
+            if (error == FirebaseAuthError.ERROR_USER_DISABLED) {
+                IdpResponse response = IdpResponse.from(
+                        new FirebaseUiException(ErrorCodes.ERROR_USER_DISABLED));
+                finish(RESULT_CANCELED, response.toIntent());
+                return;
+            }
+            errorView.setError(getErrorMessage(error));
         } else if (e != null) {
-            errorView.setError(e.getLocalizedMessage());
+            errorView.setError(getErrorMessage(FirebaseAuthError.ERROR_UNKNOWN));
         } else {
             errorView.setError(null);
         }

@@ -20,10 +20,11 @@ package com.firebase.ui.auth.data.model;
 
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.support.annotation.RestrictTo;
 
 import java.text.Collator;
 import java.util.Locale;
+
+import androidx.annotation.RestrictTo;
 
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public final class CountryInfo implements Comparable<CountryInfo>, Parcelable {
@@ -104,9 +105,16 @@ public final class CountryInfo implements Comparable<CountryInfo>, Parcelable {
         return localeToEmoji(mLocale) + " " + mLocale.getDisplayCountry() + " +" + mCountryCode;
     }
 
+    public String toShortString() {
+        return localeToEmoji(mLocale) + " +" + mCountryCode;
+    }
+
     @Override
     public int compareTo(CountryInfo info) {
-        return mCollator.compare(mLocale.getDisplayCountry(), info.mLocale.getDisplayCountry());
+        Locale defaultLocale = Locale.getDefault();
+        return mCollator.compare(
+                mLocale.getDisplayCountry().toUpperCase(defaultLocale),
+                info.mLocale.getDisplayCountry().toUpperCase(defaultLocale));
     }
 
     @Override

@@ -1,9 +1,10 @@
 package com.firebase.ui.auth.viewmodel;
 
 import android.app.Activity;
-import android.arch.lifecycle.Observer;
+import android.app.Application;
 
 import com.firebase.ui.auth.AuthUI;
+import com.firebase.ui.auth.ErrorCodes;
 import com.firebase.ui.auth.FirebaseAuthAnonymousUpgradeException;
 import com.firebase.ui.auth.IdpResponse;
 import com.firebase.ui.auth.data.model.FlowParameters;
@@ -25,9 +26,9 @@ import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.EmailAuthProvider;
 import com.google.firebase.auth.FacebookAuthProvider;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseAuthUserCollisionException;
 import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.auth.GithubAuthProvider;
 import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.auth.SignInMethodQueryResult;
 
@@ -39,11 +40,12 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+
+import androidx.lifecycle.Observer;
+import androidx.test.core.app.ApplicationProvider;
 
 import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -63,21 +65,15 @@ public class SocialProviderResponseHandlerTest {
 
     private SocialProviderResponseHandler mHandler;
 
-    private static final ArrayList<String> NON_GITHUB_PROVIDERS = new ArrayList<>();
-    static {
-        NON_GITHUB_PROVIDERS.addAll(AuthUI.SUPPORTED_PROVIDERS);
-        NON_GITHUB_PROVIDERS.remove(GithubAuthProvider.PROVIDER_ID);
-    }
-
     @Before
     public void setUp() {
         TestHelper.initialize();
         MockitoAnnotations.initMocks(this);
 
-        mHandler = new SocialProviderResponseHandler(RuntimeEnvironment.application);
-        FlowParameters testParams = TestHelper.getFlowParameters(NON_GITHUB_PROVIDERS);
+        mHandler = new SocialProviderResponseHandler((Application) ApplicationProvider.getApplicationContext());
+        FlowParameters testParams = TestHelper.getFlowParameters(AuthUI.SUPPORTED_PROVIDERS);
 
-        mHandler.initializeForTesting(testParams, mMockAuth, null, null);
+        mHandler.initializeForTesting(testParams, mMockAuth, null);
     }
 
     @Test
@@ -98,9 +94,9 @@ public class SocialProviderResponseHandlerTest {
 
         InOrder inOrder = inOrder(mResultObserver);
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+                .onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
     @Test(expected = IllegalStateException.class)
@@ -122,7 +118,25 @@ public class SocialProviderResponseHandlerTest {
 
         mHandler.startSignIn(response);
 
-        verify(mResultObserver).onChanged(argThat(ResourceMatchers.<IdpResponse>isFailure()));
+        verify(mResultObserver).onChanged(argThat(ResourceMatchers.isFailure()));
+    }
+
+    @Test
+    public void testSignInIdp_disabled() {
+        mHandler.getOperation().observeForever(mResultObserver);
+
+        when(mMockAuth.signInWithCredential(any(AuthCredential.class)))
+                .thenReturn(AutoCompleteTask.forFailure(
+                        new FirebaseAuthException("ERROR_USER_DISABLED", "disabled")));
+
+        IdpResponse response = new IdpResponse.Builder(new User.Builder(
+                GoogleAuthProvider.PROVIDER_ID, TestConstants.EMAIL).build())
+                .setToken(TestConstants.TOKEN)
+                .build();
+        mHandler.startSignIn(response);
+
+        verify(mResultObserver).onChanged(
+                argThat(ResourceMatchers.isFailureWithCode(ErrorCodes.ERROR_USER_DISABLED)));
     }
 
     @Test
@@ -130,10 +144,10 @@ public class SocialProviderResponseHandlerTest {
         mHandler.getOperation().observeForever(mResultObserver);
 
         when(mMockAuth.signInWithCredential(any(AuthCredential.class)))
-                .thenReturn(AutoCompleteTask.<AuthResult>forFailure(
+                .thenReturn(AutoCompleteTask.forFailure(
                         new FirebaseAuthUserCollisionException("foo", "bar")));
         when(mMockAuth.fetchSignInMethodsForEmail(any(String.class)))
-                .thenReturn(AutoCompleteTask.<SignInMethodQueryResult>forSuccess(
+                .thenReturn(AutoCompleteTask.forSuccess(
                         new FakeSignInMethodQueryResult(Collections.singletonList(
                                 FacebookAuthProvider.FACEBOOK_SIGN_IN_METHOD))));
 
@@ -149,7 +163,7 @@ public class SocialProviderResponseHandlerTest {
 
         InOrder inOrder = inOrder(mResultObserver);
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
 
         ArgumentCaptor<Resource<IdpResponse>> resolveCaptor =
                 ArgumentCaptor.forClass(Resource.class);
@@ -162,7 +176,7 @@ public class SocialProviderResponseHandlerTest {
 
         // Make sure we get success
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+                .onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
 
@@ -185,9 +199,9 @@ public class SocialProviderResponseHandlerTest {
 
         InOrder inOrder = inOrder(mResultObserver);
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isSuccess()));
+                .onChanged(argThat(ResourceMatchers.isSuccess()));
     }
 
     @Test
@@ -196,12 +210,12 @@ public class SocialProviderResponseHandlerTest {
         setupAnonymousUpgrade();
 
         when(mMockAuth.getCurrentUser().linkWithCredential(any(AuthCredential.class)))
-                .thenReturn(AutoCompleteTask.<AuthResult>forFailure(
+                .thenReturn(AutoCompleteTask.forFailure(
                         new FirebaseAuthUserCollisionException("foo", "bar")));
 
         // Case 1: Anon user signing in with a Google credential that belongs to an existing user.
         when(mMockAuth.fetchSignInMethodsForEmail(any(String.class)))
-                .thenReturn(AutoCompleteTask.<SignInMethodQueryResult>forSuccess(
+                .thenReturn(AutoCompleteTask.forSuccess(
                         new FakeSignInMethodQueryResult(Arrays.asList(
                                 GoogleAuthProvider.GOOGLE_SIGN_IN_METHOD,
                                 FacebookAuthProvider.FACEBOOK_SIGN_IN_METHOD))));
@@ -218,7 +232,7 @@ public class SocialProviderResponseHandlerTest {
 
         InOrder inOrder = inOrder(mResultObserver);
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
 
         ArgumentCaptor<Resource<IdpResponse>> resolveCaptor =
                 ArgumentCaptor.forClass(Resource.class);
@@ -236,13 +250,13 @@ public class SocialProviderResponseHandlerTest {
         setupAnonymousUpgrade();
 
         when(mMockAuth.getCurrentUser().linkWithCredential(any(AuthCredential.class)))
-                .thenReturn(AutoCompleteTask.<AuthResult>forFailure(
+                .thenReturn(AutoCompleteTask.forFailure(
                         new FirebaseAuthUserCollisionException("foo", "bar")));
 
         // Case 2 & 3: trying to link with an account that has 1 idp, which is different from the
         // one that we're trying to log in with
         when(mMockAuth.fetchSignInMethodsForEmail(any(String.class)))
-                .thenReturn(AutoCompleteTask.<SignInMethodQueryResult>forSuccess(
+                .thenReturn(AutoCompleteTask.forSuccess(
                         new FakeSignInMethodQueryResult(Collections.singletonList(
                                 FacebookAuthProvider.FACEBOOK_SIGN_IN_METHOD))));
 
@@ -257,7 +271,7 @@ public class SocialProviderResponseHandlerTest {
 
         InOrder inOrder = inOrder(mResultObserver);
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
 
         ArgumentCaptor<Resource<IdpResponse>> resolveCaptor =
                 ArgumentCaptor.forClass(Resource.class);
@@ -279,13 +293,13 @@ public class SocialProviderResponseHandlerTest {
         setupAnonymousUpgrade();
 
         when(mMockAuth.getCurrentUser().linkWithCredential(any(AuthCredential.class)))
-                .thenReturn(AutoCompleteTask.<AuthResult>forFailure(
+                .thenReturn(AutoCompleteTask.forFailure(
                         new FirebaseAuthUserCollisionException("foo", "bar")));
 
         // Case 2 & 3: trying to link with an account that has 1 password provider and logging in
         // with an idp that has the same email
         when(mMockAuth.fetchSignInMethodsForEmail(any(String.class)))
-                .thenReturn(AutoCompleteTask.<SignInMethodQueryResult>forSuccess(
+                .thenReturn(AutoCompleteTask.forSuccess(
                         new FakeSignInMethodQueryResult(Collections.singletonList(
                                 EmailAuthProvider.EMAIL_PASSWORD_SIGN_IN_METHOD))));
 
@@ -301,7 +315,7 @@ public class SocialProviderResponseHandlerTest {
 
         InOrder inOrder = inOrder(mResultObserver);
         inOrder.verify(mResultObserver)
-                .onChanged(argThat(ResourceMatchers.<IdpResponse>isLoading()));
+                .onChanged(argThat(ResourceMatchers.isLoading()));
 
         ArgumentCaptor<Resource<IdpResponse>> resolveCaptor =
                 ArgumentCaptor.forClass(Resource.class);
@@ -318,9 +332,9 @@ public class SocialProviderResponseHandlerTest {
 
     private void setupAnonymousUpgrade() {
         // enableAnonymousUpgrade must be set to true
-        FlowParameters testParams = TestHelper.getFlowParameters(NON_GITHUB_PROVIDERS,
+        FlowParameters testParams = TestHelper.getFlowParameters(AuthUI.SUPPORTED_PROVIDERS,
                 /* enableAnonymousUpgrade */ true);
-        mHandler.initializeForTesting(testParams, mMockAuth, null, null);
+        mHandler.initializeForTesting(testParams, mMockAuth, null);
 
         when(mUser.isAnonymous()).thenReturn(true);
         when(mMockAuth.getCurrentUser()).thenReturn(mUser);

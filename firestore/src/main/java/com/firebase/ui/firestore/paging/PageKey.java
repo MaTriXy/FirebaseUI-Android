@@ -1,11 +1,11 @@
 package com.firebase.ui.firestore.paging;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
-
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.Query;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
 
 /**
  * Key for Firestore pagination. Holds the DocumentSnapshot(s) that bound the page.
@@ -36,6 +36,18 @@ public class PageKey {
         }
 
         return pageQuery;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        PageKey key = (PageKey) o;
+        if (mStartAfter == null && key.mStartAfter == null &&
+                mEndBefore == null && key.mEndBefore == null)
+            return true;
+        return mStartAfter.getId().equals(key.mStartAfter.getId()) &&
+                mEndBefore.getId().equals(key.mEndBefore.getId());
     }
 
     @Override

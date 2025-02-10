@@ -14,11 +14,17 @@
 
 package com.firebase.ui.auth.ui;
 
+import android.annotation.SuppressLint;
+import android.content.pm.ActivityInfo;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
 
 import com.firebase.ui.auth.R;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentTransaction;
 
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public abstract class AppCompatBase extends HelperActivityBase {
@@ -27,5 +33,35 @@ public abstract class AppCompatBase extends HelperActivityBase {
         super.onCreate(savedInstanceState);
         setTheme(R.style.FirebaseUI); // Provides default values
         setTheme(getFlowParams().themeId);
+
+        if (getFlowParams().lockOrientation) {
+            lockOrientation();
+        }
+    }
+
+    protected void switchFragment(@NonNull Fragment fragment,
+                                  int fragmentId,
+                                  @NonNull String tag,
+                                  boolean withTransition,
+                                  boolean addToBackStack) {
+        FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+        if (withTransition) {
+            ft.setCustomAnimations(R.anim.fui_slide_in_right, R.anim.fui_slide_out_left);
+        }
+        ft.replace(fragmentId, fragment, tag);
+        if (addToBackStack) {
+            ft.addToBackStack(null).commit();
+        } else {
+            ft.disallowAddToBackStack().commit();
+        }
+    }
+
+    protected void switchFragment(@NonNull Fragment fragment, int fragmentId, @NonNull String tag) {
+        switchFragment(fragment, fragmentId, tag, false, false);
+    }
+
+    @SuppressLint("SourceLockedOrientationActivity")
+    private void lockOrientation() {
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
     }
 }

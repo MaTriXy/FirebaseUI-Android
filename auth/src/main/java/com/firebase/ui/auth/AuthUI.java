@@ -19,19 +19,11 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.support.annotation.CallSuper;
-import android.support.annotation.DrawableRes;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
-import android.support.annotation.StringDef;
-import android.support.annotation.StyleRes;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.facebook.login.LoginManager;
 import com.firebase.ui.auth.data.model.FlowParameters;
-import com.firebase.ui.auth.data.remote.TwitterSignInHandler;
 import com.firebase.ui.auth.ui.idp.AuthMethodPickerActivity;
 import com.firebase.ui.auth.util.CredentialUtils;
 import com.firebase.ui.auth.util.ExtraConstants;
@@ -42,7 +34,6 @@ import com.firebase.ui.auth.util.data.ProviderAvailability;
 import com.firebase.ui.auth.util.data.ProviderUtils;
 import com.google.android.gms.auth.api.credentials.Credential;
 import com.google.android.gms.auth.api.credentials.CredentialRequest;
-import com.google.android.gms.auth.api.credentials.CredentialRequestResponse;
 import com.google.android.gms.auth.api.credentials.CredentialsClient;
 import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
@@ -50,10 +41,10 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Scope;
-import com.google.android.gms.tasks.Continuation;
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.FirebaseApp;
+import com.google.firebase.auth.ActionCodeSettings;
 import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.EmailAuthProvider;
@@ -67,18 +58,27 @@ import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.auth.PhoneAuthProvider;
 import com.google.firebase.auth.TwitterAuthProvider;
 import com.google.firebase.auth.UserInfo;
-import com.twitter.sdk.android.core.TwitterCore;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+
+import androidx.annotation.CallSuper;
+import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
+import androidx.annotation.StringDef;
+import androidx.annotation.StyleRes;
 
 /**
  * The entry point to the AuthUI authentication flow, and related utility methods. If your
@@ -87,7 +87,8 @@ import java.util.Set;
  * {@link AuthUI#getInstance(FirebaseApp)} instead, passing the appropriate app instance.
  * <p>
  * <p>
- * See the <a href="https://github.com/firebase/FirebaseUI-Android/blob/master/auth/README.md#table-of-contents">README</a>
+ * See the
+ * <a href="https://github.com/firebase/FirebaseUI-Android/blob/master/auth/README.md#table-of-contents">README</a>
  * for examples on how to get started with FirebaseUI Auth.
  */
 public final class AuthUI {
@@ -100,18 +101,11 @@ public final class AuthUI {
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public static final String ANONYMOUS_PROVIDER = "anonymous";
+    public static final String EMAIL_LINK_PROVIDER = EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD;
 
-    @StringDef({
-                       GoogleAuthProvider.PROVIDER_ID,
-                       FacebookAuthProvider.PROVIDER_ID,
-                       TwitterAuthProvider.PROVIDER_ID,
-                       GithubAuthProvider.PROVIDER_ID,
-                       EmailAuthProvider.PROVIDER_ID,
-                       PhoneAuthProvider.PROVIDER_ID,
-                       ANONYMOUS_PROVIDER
-               })
-    @Retention(RetentionPolicy.SOURCE)
-    public @interface SupportedProvider {}
+    public static final String MICROSOFT_PROVIDER = "microsoft.com";
+    public static final String YAHOO_PROVIDER = "yahoo.com";
+    public static final String APPLE_PROVIDER = "apple.com";
 
     /**
      * Default value for logo resource, omits the logo from the {@link AuthMethodPickerActivity}.
@@ -129,19 +123,30 @@ public final class AuthUI {
                     GithubAuthProvider.PROVIDER_ID,
                     EmailAuthProvider.PROVIDER_ID,
                     PhoneAuthProvider.PROVIDER_ID,
-                    ANONYMOUS_PROVIDER
+                    ANONYMOUS_PROVIDER,
+                    EMAIL_LINK_PROVIDER
             )));
 
     /**
-     * The set of social authentication providers supported in Firebase Auth UI.
+     * The set of OAuth2.0 providers supported in Firebase Auth UI through Generic IDP (web flow).
+     */
+    public static final Set<String> SUPPORTED_OAUTH_PROVIDERS =
+            Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+                    MICROSOFT_PROVIDER,
+                    YAHOO_PROVIDER,
+                    APPLE_PROVIDER,
+                    TwitterAuthProvider.PROVIDER_ID,
+                    GithubAuthProvider.PROVIDER_ID
+            )));
+
+    /**
+     * The set of social authentication providers supported in Firebase Auth UI using their SDK.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public static final Set<String> SOCIAL_PROVIDERS =
             Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
                     GoogleAuthProvider.PROVIDER_ID,
-                    FacebookAuthProvider.PROVIDER_ID,
-                    TwitterAuthProvider.PROVIDER_ID,
-                    GithubAuthProvider.PROVIDER_ID)));
+                    FacebookAuthProvider.PROVIDER_ID)));
 
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public static final String UNCONFIGURED_CONFIG_VALUE = "CHANGE-ME";
@@ -152,6 +157,9 @@ public final class AuthUI {
 
     private final FirebaseApp mApp;
     private final FirebaseAuth mAuth;
+
+    private String mEmulatorHost = null;
+    private int mEmulatorPort = -1;
 
     private AuthUI(FirebaseApp app) {
         mApp = app;
@@ -166,15 +174,15 @@ public final class AuthUI {
     }
 
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public static void setApplicationContext(@NonNull Context context) {
-        sApplicationContext = Preconditions.checkNotNull(context, "App context cannot be null.")
-                .getApplicationContext();
-    }
-
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     @NonNull
     public static Context getApplicationContext() {
         return sApplicationContext;
+    }
+
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public static void setApplicationContext(@NonNull Context context) {
+        sApplicationContext = Preconditions.checkNotNull(context, "App context cannot be null.")
+                .getApplicationContext();
     }
 
     /**
@@ -189,10 +197,31 @@ public final class AuthUI {
     }
 
     /**
+     * Retrieves the {@link AuthUI} instance associated the the specified app name.
+     *
+     * @throws IllegalStateException if the app is not initialized.
+     */
+    @NonNull
+    public static AuthUI getInstance(@NonNull String appName) {
+        return getInstance(FirebaseApp.getInstance(appName));
+    }
+
+    /**
      * Retrieves the {@link AuthUI} instance associated the the specified app.
      */
     @NonNull
     public static AuthUI getInstance(@NonNull FirebaseApp app) {
+        String releaseUrl = "https://github.com/firebase/FirebaseUI-Android/releases/tag/6.2.0";
+        String devWarning = "Beginning with FirebaseUI 6.2.0 you no longer need to include %s to " +
+                "sign in with %s. Go to %s for more information";
+        if (ProviderAvailability.IS_TWITTER_AVAILABLE) {
+            Log.w(TAG, String.format(devWarning, "the TwitterKit SDK", "Twitter", releaseUrl));
+        }
+        if (ProviderAvailability.IS_GITHUB_AVAILABLE) {
+            Log.w(TAG, String.format(devWarning, "com.firebaseui:firebase-ui-auth-github",
+                    "GitHub", releaseUrl));
+        }
+
         AuthUI authUi;
         synchronized (INSTANCES) {
             authUi = INSTANCES.get(app);
@@ -204,13 +233,68 @@ public final class AuthUI {
         return authUi;
     }
 
+    @NonNull
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public FirebaseApp getApp() {
+        return mApp;
+    }
+
+    @NonNull
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public FirebaseAuth getAuth() {
+        return mAuth;
+    }
+
+    /**
+     * Returns true if AuthUI can handle the intent.
+     * <p>
+     * AuthUI handle the intent when the embedded data is an email link. If it is, you can then
+     * specify the link in {@link SignInIntentBuilder#setEmailLink(String)} before starting AuthUI
+     * and it will be handled immediately.
+     */
+    public static boolean canHandleIntent(@NonNull Intent intent) {
+        if (intent == null || intent.getData() == null) {
+            return false;
+        }
+        String link = intent.getData().toString();
+        return FirebaseAuth.getInstance().isSignInWithEmailLink(link);
+    }
+
     /**
      * Default theme used by {@link SignInIntentBuilder#setTheme(int)} if no theme customization is
      * required.
      */
     @StyleRes
     public static int getDefaultTheme() {
-        return R.style.FirebaseUI;
+        return R.style.FirebaseUI_DefaultMaterialTheme;
+    }
+
+    /**
+     * Make a list of {@link Credential} from a FirebaseUser. Useful for deleting Credentials, not
+     * for saving since we don't have access to the password.
+     */
+    private static List<Credential> getCredentialsFromFirebaseUser(@NonNull FirebaseUser user) {
+        if (TextUtils.isEmpty(user.getEmail()) && TextUtils.isEmpty(user.getPhoneNumber())) {
+            return Collections.emptyList();
+        }
+
+        List<Credential> credentials = new ArrayList<>();
+        for (UserInfo userInfo : user.getProviderData()) {
+            if (FirebaseAuthProvider.PROVIDER_ID.equals(userInfo.getProviderId())) {
+                continue;
+            }
+
+            String type = ProviderUtils.providerIdToAccountType(userInfo.getProviderId());
+            if (type == null) {
+                // Since the account type is null, we've got an email credential. Adding a fake
+                // password is the only way to tell Smart Lock that this is an email credential.
+                credentials.add(CredentialUtils.buildCredentialOrThrow(user, "pass", null));
+            } else {
+                credentials.add(CredentialUtils.buildCredentialOrThrow(user, null, type));
+            }
+        }
+
+        return credentials;
     }
 
     /**
@@ -254,6 +338,12 @@ public final class AuthUI {
                     .getParcelable(ExtraConstants.GOOGLE_SIGN_IN_OPTIONS);
         }
 
+        // If Play services are not available we can't attempt to use the credentials client.
+        if (!GoogleApiUtils.isPlayServicesAvailable(context)) {
+            return Tasks.forException(
+                    new FirebaseUiException(ErrorCodes.PLAY_SERVICES_UPDATE_CANCELLED));
+        }
+
         return GoogleApiUtils.getCredentialsClient(context)
                 .request(new CredentialRequest.Builder()
                         // We can support both email and Google at the same time here because they
@@ -262,32 +352,28 @@ public final class AuthUI {
                         // one, meaning Smart Lock won't have to show the picker UI.
                         .setPasswordLoginSupported(email != null)
                         .setAccountTypes(google == null ? null :
-                                ProviderUtils.providerIdToAccountType(GoogleAuthProvider.PROVIDER_ID))
+                                ProviderUtils.providerIdToAccountType(GoogleAuthProvider
+                                        .PROVIDER_ID))
                         .build())
-                .continueWithTask(new Continuation<CredentialRequestResponse, Task<AuthResult>>() {
-                    @Override
-                    public Task<AuthResult> then(@NonNull Task<CredentialRequestResponse> task) {
-                        Credential credential = task.getResult().getCredential();
-                        String email = credential.getId();
-                        String password = credential.getPassword();
+                .continueWithTask(task -> {
+                    Credential credential = task.getResult().getCredential();
+                    String email1 = credential.getId();
+                    String password = credential.getPassword();
 
-                        if (TextUtils.isEmpty(password)) {
-                            return GoogleSignIn.getClient(appContext,
-                                    new GoogleSignInOptions.Builder(googleOptions)
-                                            .setAccountName(email)
-                                            .build())
-                                    .silentSignIn()
-                                    .continueWithTask(new Continuation<GoogleSignInAccount, Task<AuthResult>>() {
-                                        @Override
-                                        public Task<AuthResult> then(@NonNull Task<GoogleSignInAccount> task) {
-                                            AuthCredential authCredential = GoogleAuthProvider.getCredential(
-                                                    task.getResult().getIdToken(), null);
-                                            return mAuth.signInWithCredential(authCredential);
-                                        }
-                                    });
-                        } else {
-                            return mAuth.signInWithEmailAndPassword(email, password);
-                        }
+                    if (TextUtils.isEmpty(password)) {
+                        return GoogleSignIn.getClient(appContext,
+                                new GoogleSignInOptions.Builder(googleOptions)
+                                        .setAccountName(email1)
+                                        .build())
+                                .silentSignIn()
+                                .continueWithTask(task1 -> {
+                                    AuthCredential authCredential = GoogleAuthProvider
+                                            .getCredential(
+                                                    task1.getResult().getIdToken(), null);
+                                    return mAuth.signInWithCredential(authCredential);
+                                });
+                    } else {
+                        return mAuth.signInWithEmailAndPassword(email1, password);
                     }
                 });
     }
@@ -302,35 +388,38 @@ public final class AuthUI {
      */
     @NonNull
     public Task<Void> signOut(@NonNull Context context) {
-        Task<Void> maybeDisableAutoSignIn = GoogleApiUtils.getCredentialsClient(context)
-                .disableAutoSignIn()
-                .continueWith(new Continuation<Void, Void>() {
-                    @Override
-                    public Void then(@NonNull Task<Void> task) {
-                        // We want to ignore a specific exception, since it's not a good reason
-                        // to fail (see Issue 1156).
-                        Exception e = task.getException();
-                        if (e instanceof ApiException
-                                && ((ApiException) e).getStatusCode() == CommonStatusCodes.CANCELED) {
-                            Log.w(TAG, "Could not disable auto-sign in, maybe there are no " +
-                                    "SmartLock accounts available?", e);
-                            return null;
-                        }
+        boolean playServicesAvailable = GoogleApiUtils.isPlayServicesAvailable(context);
+        if (!playServicesAvailable) {
+            Log.w(TAG, "Google Play services not available during signOut");
+        }
 
-                        return task.getResult();
+        Task<Void> maybeDisableAutoSignIn = playServicesAvailable
+                ? GoogleApiUtils.getCredentialsClient(context).disableAutoSignIn()
+                : Tasks.forResult((Void) null);
+
+        maybeDisableAutoSignIn
+                .continueWith(task -> {
+                    // We want to ignore a specific exception, since it's not a good reason
+                    // to fail (see Issue 1156).
+                    Exception e = task.getException();
+                    if (e instanceof ApiException
+                            && ((ApiException) e).getStatusCode() == CommonStatusCodes
+                            .CANCELED) {
+                        Log.w(TAG, "Could not disable auto-sign in, maybe there are no " +
+                                "SmartLock accounts available?", e);
+                        return null;
                     }
+
+                    return task.getResult();
                 });
 
         return Tasks.whenAll(
                 signOutIdps(context),
                 maybeDisableAutoSignIn
-        ).continueWith(new Continuation<Void, Void>() {
-            @Override
-            public Void then(@NonNull Task<Void> task) {
-                task.getResult(); // Propagate exceptions
-                mAuth.signOut();
-                return null;
-            }
+        ).continueWith(task -> {
+            task.getResult(); // Propagate exceptions
+            mAuth.signOut();
+            return null;
         });
     }
 
@@ -343,7 +432,7 @@ public final class AuthUI {
      * @param context the calling {@link Context}.
      */
     @NonNull
-    public Task<Void> delete(@NonNull Context context) {
+    public Task<Void> delete(@NonNull final Context context) {
         final FirebaseUser currentUser = mAuth.getCurrentUser();
         if (currentUser == null) {
             return Tasks.forException(new FirebaseAuthInvalidUserException(
@@ -352,83 +441,80 @@ public final class AuthUI {
         }
 
         final List<Credential> credentials = getCredentialsFromFirebaseUser(currentUser);
-        final CredentialsClient client = GoogleApiUtils.getCredentialsClient(context);
 
         // Ensure the order in which tasks are executed properly destructures the user.
-        return signOutIdps(context).continueWithTask(new Continuation<Void, Task<Void>>() {
-            @Override
-            public Task<Void> then(@NonNull Task<Void> task) {
-                task.getResult(); // Propagate exception if there was one
+        return signOutIdps(context).continueWithTask(task -> {
+            task.getResult(); // Propagate exception if there was one
 
-                List<Task<?>> credentialTasks = new ArrayList<>();
-                for (Credential credential : credentials) {
-                    credentialTasks.add(client.delete(credential));
-                }
-                return Tasks.whenAll(credentialTasks)
-                        .continueWith(new Continuation<Void, Void>() {
-                            @Override
-                            public Void then(@NonNull Task<Void> task) {
-                                Exception e = task.getException();
-                                Throwable t = e == null ? null : e.getCause();
-                                if (!(t instanceof ApiException)
-                                        || ((ApiException) t).getStatusCode() != CommonStatusCodes.CANCELED) {
-                                    // Only propagate the exception if it isn't an invalid account
-                                    // one. This can occur if we failed to save the credential or it
-                                    // was deleted elsewhere. However, a lack of stored credential
-                                    // doesn't mean fully deleting the user failed.
-                                    return task.getResult();
-                                }
+            if (!GoogleApiUtils.isPlayServicesAvailable(context)) {
+                Log.w(TAG, "Google Play services not available during delete");
+                return Tasks.forResult((Void) null);
+            }
 
-                                return null;
-                            }
-                        });
+            final CredentialsClient client = GoogleApiUtils.getCredentialsClient(context);
+            List<Task<?>> credentialTasks = new ArrayList<>();
+            for (Credential credential : credentials) {
+                credentialTasks.add(client.delete(credential));
             }
-        }).continueWithTask(new Continuation<Void, Task<Void>>() {
-            @Override
-            public Task<Void> then(@NonNull Task<Void> task) {
-                task.getResult(); // Propagate exception if there was one
-                return currentUser.delete();
-            }
+            return Tasks.whenAll(credentialTasks)
+                    .continueWith(task1 -> {
+                        Exception e = task1.getException();
+                        Throwable t = e == null ? null : e.getCause();
+                        if (!(t instanceof ApiException)
+                                || ((ApiException) t).getStatusCode() !=
+                                CommonStatusCodes.CANCELED) {
+                            // Only propagate the exception if it isn't an invalid account
+                            // one. This can occur if we failed to save the credential or it
+                            // was deleted elsewhere. However, a lack of stored credential
+                            // doesn't mean fully deleting the user failed.
+                            return task1.getResult();
+                        }
+
+                        return null;
+                    });
+        }).continueWithTask(task -> {
+            task.getResult(); // Propagate exception if there was one
+            return currentUser.delete();
         });
+    }
+
+    /**
+     * Connect to the Firebase Authentication emulator.
+     * @see FirebaseAuth#useEmulator(String, int)
+     */
+    public void useEmulator(@NonNull String host, int port) {
+        Preconditions.checkArgument(port >= 0, "Port must be >= 0");
+        Preconditions.checkArgument(port <= 65535, "Port must be <= 65535");
+        mEmulatorHost = host;
+        mEmulatorPort = port;
+
+        mAuth.useEmulator(host, port);
+    }
+
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public boolean isUseEmulator() {
+        return mEmulatorHost != null && mEmulatorPort >= 0;
+    }
+
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public String getEmulatorHost() {
+        return mEmulatorHost;
+    }
+
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public int getEmulatorPort() {
+        return mEmulatorPort;
     }
 
     private Task<Void> signOutIdps(@NonNull Context context) {
         if (ProviderAvailability.IS_FACEBOOK_AVAILABLE) {
             LoginManager.getInstance().logOut();
         }
-        if (ProviderAvailability.IS_TWITTER_AVAILABLE) {
-            TwitterSignInHandler.initializeTwitter();
-            TwitterCore.getInstance().getSessionManager().clearActiveSession();
+        if (GoogleApiUtils.isPlayServicesAvailable(context)) {
+            return GoogleSignIn.getClient(context, GoogleSignInOptions.DEFAULT_SIGN_IN).signOut();
+        } else {
+            return Tasks.forResult((Void) null);
         }
-        return GoogleSignIn.getClient(context, GoogleSignInOptions.DEFAULT_SIGN_IN).signOut();
-    }
-
-    /**
-     * Make a list of {@link Credential} from a FirebaseUser. Useful for deleting Credentials, not
-     * for saving since we don't have access to the password.
-     */
-    private static List<Credential> getCredentialsFromFirebaseUser(@NonNull FirebaseUser user) {
-        if (TextUtils.isEmpty(user.getEmail()) && TextUtils.isEmpty(user.getPhoneNumber())) {
-            return Collections.emptyList();
-        }
-
-        List<Credential> credentials = new ArrayList<>();
-        for (UserInfo userInfo : user.getProviderData()) {
-            if (FirebaseAuthProvider.PROVIDER_ID.equals(userInfo.getProviderId())) {
-                continue;
-            }
-
-            String type = ProviderUtils.providerIdToAccountType(userInfo.getProviderId());
-            if (type == null) {
-                // Since the account type is null, we've got an email credential. Adding a fake
-                // password is the only way to tell Smart Lock that this is an email credential.
-                credentials.add(CredentialUtils.buildCredentialOrThrow(user, "pass", null));
-            } else {
-                credentials.add(CredentialUtils.buildCredentialOrThrow(user, null, type));
-            }
-        }
-
-        return credentials;
     }
 
     /**
@@ -438,6 +524,20 @@ public final class AuthUI {
     @NonNull
     public SignInIntentBuilder createSignInIntentBuilder() {
         return new SignInIntentBuilder();
+    }
+
+    @StringDef({
+            GoogleAuthProvider.PROVIDER_ID,
+            FacebookAuthProvider.PROVIDER_ID,
+            TwitterAuthProvider.PROVIDER_ID,
+            GithubAuthProvider.PROVIDER_ID,
+            EmailAuthProvider.PROVIDER_ID,
+            PhoneAuthProvider.PROVIDER_ID,
+            ANONYMOUS_PROVIDER,
+            EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface SupportedProvider {
     }
 
     /**
@@ -525,11 +625,13 @@ public final class AuthUI {
          * @see SignInIntentBuilder#setAvailableProviders(List)
          */
         public static class Builder {
-            @SupportedProvider private final String mProviderId;
             private final Bundle mParams = new Bundle();
+            @SupportedProvider
+            private String mProviderId;
 
             protected Builder(@SupportedProvider @NonNull String providerId) {
-                if (!SUPPORTED_PROVIDERS.contains(providerId)) {
+                if (!SUPPORTED_PROVIDERS.contains(providerId)
+                        && !SUPPORTED_OAUTH_PROVIDERS.contains(providerId)) {
                     throw new IllegalArgumentException("Unknown provider: " + providerId);
                 }
                 mProviderId = providerId;
@@ -539,6 +641,11 @@ public final class AuthUI {
             @NonNull
             protected final Bundle getParams() {
                 return mParams;
+            }
+
+            @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+            protected void setProviderId(@NonNull String providerId) {
+                mProviderId = providerId;
             }
 
             @CallSuper
@@ -557,7 +664,7 @@ public final class AuthUI {
             }
 
             /**
-             * Enables or disables creating new accounts in the email sign in flow.
+             * Enables or disables creating new accounts in the email sign in flows.
              * <p>
              * Account creation is enabled by default.
              */
@@ -577,6 +684,79 @@ public final class AuthUI {
             public EmailBuilder setRequireName(boolean requireName) {
                 getParams().putBoolean(ExtraConstants.REQUIRE_NAME, requireName);
                 return this;
+            }
+
+            /**
+             * Enables email link sign in instead of password based sign in. Once enabled, you must
+             * pass a valid {@link ActionCodeSettings} object using
+             * {@link #setActionCodeSettings(ActionCodeSettings)}
+             * <p>
+             * You must enable Firebase Dynamic Links in the Firebase Console to use email link
+             * sign in.
+             *
+             * @throws IllegalStateException if {@link ActionCodeSettings} is null or not
+             *                               provided with email link enabled.
+             */
+            @NonNull
+            public EmailBuilder enableEmailLinkSignIn() {
+                setProviderId(EMAIL_LINK_PROVIDER);
+                return this;
+            }
+
+            /**
+             * Sets the {@link ActionCodeSettings} object to be used for email link sign in.
+             * <p>
+             * {@link ActionCodeSettings#canHandleCodeInApp()} must be set to true, and a valid
+             * continueUrl must be passed via {@link ActionCodeSettings.Builder#setUrl(String)}.
+             * This URL must be allowlisted in the Firebase Console.
+             *
+             * @throws IllegalStateException if canHandleCodeInApp is set to false
+             * @throws NullPointerException  if ActionCodeSettings is null
+             */
+            @NonNull
+            public EmailBuilder setActionCodeSettings(ActionCodeSettings actionCodeSettings) {
+                getParams().putParcelable(ExtraConstants.ACTION_CODE_SETTINGS, actionCodeSettings);
+                return this;
+            }
+
+            /**
+             * Disables allowing email link sign in to occur across different devices.
+             * <p>
+             * This cannot be disabled with anonymous upgrade.
+             */
+            @NonNull
+            public EmailBuilder setForceSameDevice() {
+                getParams().putBoolean(ExtraConstants.FORCE_SAME_DEVICE, true);
+                return this;
+            }
+
+            /**
+             * Sets a default sign in email, if the given email has been registered before, then
+             * it will ask the user for password, if the given email it's not registered, then
+             * it starts signing up the default email.
+             */
+            @NonNull
+            public EmailBuilder setDefaultEmail(String email) {
+                getParams().putString(ExtraConstants.DEFAULT_EMAIL, email);
+                return this;
+            }
+
+            @Override
+            public IdpConfig build() {
+                if (super.mProviderId.equals(EMAIL_LINK_PROVIDER)) {
+                    ActionCodeSettings actionCodeSettings =
+                            getParams().getParcelable(ExtraConstants.ACTION_CODE_SETTINGS);
+                    Preconditions.checkNotNull(actionCodeSettings, "ActionCodeSettings cannot be " +
+                            "null when using email link sign in.");
+                    if (!actionCodeSettings.canHandleCodeInApp()) {
+                        // Pre-emptively fail if actionCodeSettings are misconfigured. This would
+                        // have happened when calling sendSignInLinkToEmail
+                        throw new IllegalStateException(
+                                "You must set canHandleCodeInApp in your ActionCodeSettings to " +
+                                        "true for Email-Link Sign-in.");
+                    }
+                }
+                return super.build();
             }
         }
 
@@ -660,7 +840,7 @@ public final class AuthUI {
              * Sets the country codes available in the country code selector for phone
              * authentication. Takes as input a List of both country isos and codes.
              * This is not to be called with
-             * {@link #setBlacklistedCountries(List)}.
+             * {@link #setBlockedCountries(List)}.
              * If both are called, an exception will be thrown.
              * <p>
              * Inputting an e-164 country code (e.g. '+1') will include all countries with
@@ -670,25 +850,26 @@ public final class AuthUI {
              * https://en.wikipedia.org/wiki/ISO_3166-1
              * and e-164 codes here: https://en.wikipedia.org/wiki/List_of_country_calling_codes
              *
-             * @param whitelistedCountries a non empty case insensitive list of country codes
-             *                             and/or isos to be whitelisted
-             * @throws IllegalArgumentException if an empty whitelist is provided.
-             * @throws NullPointerException if a null whitelist is provided.
+             * @param countries a non empty case insensitive list of country codes
+             *                  and/or isos to be allowlisted
+             * @throws IllegalArgumentException if an empty allowlist is provided.
+             * @throws NullPointerException     if a null allowlist is provided.
              */
-            public PhoneBuilder setWhitelistedCountries(
-                    @NonNull List<String> whitelistedCountries) {
-                if (getParams().containsKey(ExtraConstants.BLACKLISTED_COUNTRIES)) {
+            public PhoneBuilder setAllowedCountries(
+                    @NonNull List<String> countries) {
+                if (getParams().containsKey(ExtraConstants.BLOCKLISTED_COUNTRIES)) {
                     throw new IllegalStateException(
-                            "You can either whitelist or blacklist country codes for phone " +
+                            "You can either allowlist or blocklist country codes for phone " +
                                     "authentication.");
                 }
 
-                String message = "Invalid argument: Only non-%s whitelists are valid. " +
-                        "To specify no whitelist, do not call this method.";
-                Preconditions.checkNotNull(whitelistedCountries, String.format(message, "null"));
-                Preconditions.checkArgument(!whitelistedCountries.isEmpty(), String.format(message, "empty"));
+                String message = "Invalid argument: Only non-%s allowlists are valid. " +
+                        "To specify no allowlist, do not call this method.";
+                Preconditions.checkNotNull(countries, String.format(message, "null"));
+                Preconditions.checkArgument(!countries.isEmpty(), String.format
+                        (message, "empty"));
 
-                addCountriesToBundle(whitelistedCountries, ExtraConstants.WHITELISTED_COUNTRIES);
+                addCountriesToBundle(countries, ExtraConstants.ALLOWLISTED_COUNTRIES);
                 return this;
             }
 
@@ -696,7 +877,7 @@ public final class AuthUI {
              * Sets the countries to be removed from the country code selector for phone
              * authentication. Takes as input a List of both country isos and codes.
              * This is not to be called with
-             * {@link #setWhitelistedCountries(List)}.
+             * {@link #setAllowedCountries(List)}.
              * If both are called, an exception will be thrown.
              * <p>
              * Inputting an e-164 country code (e.g. '+1') will include all countries with
@@ -706,25 +887,26 @@ public final class AuthUI {
              * https://en.wikipedia.org/wiki/ISO_3166-1
              * and e-164 codes here: https://en.wikipedia.org/wiki/List_of_country_calling_codes
              *
-             * @param blacklistedCountries a non empty case insensitive list of country codes
-             *                             and/or isos to be blacklisted
-             * @throws IllegalArgumentException if an empty blacklist is provided.
-             * @throws NullPointerException if a null blacklist is provided.
+             * @param countries a non empty case insensitive list of country codes
+             *                  and/or isos to be blocklisted
+             * @throws IllegalArgumentException if an empty blocklist is provided.
+             * @throws NullPointerException     if a null blocklist is provided.
              */
-            public PhoneBuilder setBlacklistedCountries(
-                    @NonNull List<String> blacklistedCountries) {
-                if (getParams().containsKey(ExtraConstants.WHITELISTED_COUNTRIES)) {
+            public PhoneBuilder setBlockedCountries(
+                    @NonNull List<String> countries) {
+                if (getParams().containsKey(ExtraConstants.ALLOWLISTED_COUNTRIES)) {
                     throw new IllegalStateException(
-                            "You can either whitelist or blacklist country codes for phone " +
+                            "You can either allowlist or blocklist country codes for phone " +
                                     "authentication.");
                 }
 
-                String message = "Invalid argument: Only non-%s blacklists are valid. " +
-                        "To specify no blacklist, do not call this method.";
-                Preconditions.checkNotNull(blacklistedCountries, String.format(message, "null"));
-                Preconditions.checkArgument(!blacklistedCountries.isEmpty(), String.format(message, "empty"));
+                String message = "Invalid argument: Only non-%s blocklists are valid. " +
+                        "To specify no blocklist, do not call this method.";
+                Preconditions.checkNotNull(countries, String.format(message, "null"));
+                Preconditions.checkArgument(!countries.isEmpty(), String.format
+                        (message, "empty"));
 
-                addCountriesToBundle(blacklistedCountries, ExtraConstants.BLACKLISTED_COUNTRIES);
+                addCountriesToBundle(countries, ExtraConstants.BLOCKLISTED_COUNTRIES);
                 return this;
             }
 
@@ -744,27 +926,26 @@ public final class AuthUI {
             }
 
             private void validateInputs() {
-                List<String> whitelistedCountries = getParams().getStringArrayList(
-                        ExtraConstants.WHITELISTED_COUNTRIES);
-                List<String> blacklistedCountries = getParams().getStringArrayList(
-                        ExtraConstants.BLACKLISTED_COUNTRIES);
+                List<String> allowedCountries = getParams().getStringArrayList(
+                        ExtraConstants.ALLOWLISTED_COUNTRIES);
+                List<String> blockedCountries = getParams().getStringArrayList(
+                        ExtraConstants.BLOCKLISTED_COUNTRIES);
 
-                if (whitelistedCountries != null &&
-                        blacklistedCountries != null) {
+                if (allowedCountries != null && blockedCountries != null) {
                     throw new IllegalStateException(
-                            "You can either whitelist or blacklist country codes for phone " +
+                            "You can either allowlist or blocked country codes for phone " +
                                     "authentication.");
-                } else if (whitelistedCountries != null) {
-                    validateInputs(whitelistedCountries, true);
+                } else if (allowedCountries != null) {
+                    validateInputs(allowedCountries, true);
 
-                } else if (blacklistedCountries != null) {
-                    validateInputs(blacklistedCountries, false);
+                } else if (blockedCountries != null) {
+                    validateInputs(blockedCountries, false);
                 }
             }
 
-            private void validateInputs(List<String> countries, boolean whitelisted) {
+            private void validateInputs(List<String> countries, boolean allowed) {
                 validateCountryInput(countries);
-                validateDefaultCountryInput(countries, whitelisted);
+                validateDefaultCountryInput(countries, allowed);
             }
 
             private void validateCountryInput(List<String> codes) {
@@ -776,40 +957,40 @@ public final class AuthUI {
                 }
             }
 
-            private void validateDefaultCountryInput(List<String> codes, boolean whitelisted) {
+            private void validateDefaultCountryInput(List<String> codes, boolean allowed) {
                 // A default iso/code can be set via #setDefaultCountryIso() or #setDefaultNumber()
                 if (getParams().containsKey(ExtraConstants.COUNTRY_ISO) ||
                         getParams().containsKey(ExtraConstants.PHONE)) {
 
-                    if (!validateDefaultCountryIso(codes, whitelisted)
-                            || !validateDefaultPhoneIsos(codes, whitelisted)) {
+                    if (!validateDefaultCountryIso(codes, allowed)
+                            || !validateDefaultPhoneIsos(codes, allowed)) {
                         throw new IllegalArgumentException("Invalid default country iso. Make " +
-                                "sure it is either part of the whitelisted list or that you "
-                                + "haven't blacklisted it.");
+                                "sure it is either part of the allowed list or that you "
+                                + "haven't blocked it.");
                     }
                 }
 
             }
 
-            private boolean validateDefaultCountryIso(List<String> codes, boolean whitelisted) {
+            private boolean validateDefaultCountryIso(List<String> codes, boolean allowed) {
                 String defaultIso = getDefaultIso();
-                return isValidDefaultIso(codes, defaultIso, whitelisted);
+                return isValidDefaultIso(codes, defaultIso, allowed);
             }
 
-            private boolean validateDefaultPhoneIsos(List<String> codes, boolean whitelisted) {
+            private boolean validateDefaultPhoneIsos(List<String> codes, boolean allowed) {
                 List<String> phoneIsos = getPhoneIsosFromCode();
                 for (String iso : phoneIsos) {
-                    if (isValidDefaultIso(codes, iso, whitelisted)) {
+                    if (isValidDefaultIso(codes, iso, allowed)) {
                         return true;
                     }
                 }
                 return phoneIsos.isEmpty();
             }
 
-            private boolean isValidDefaultIso(List<String> codes, String iso, boolean whitelisted) {
+            private boolean isValidDefaultIso(List<String> codes, String iso, boolean allowed) {
                 if (iso == null) return true;
                 boolean containsIso = containsCountryIso(codes, iso);
-                return containsIso && whitelisted || !containsIso && !whitelisted;
+                return containsIso && allowed || !containsIso && !allowed;
 
             }
 
@@ -857,6 +1038,9 @@ public final class AuthUI {
         public static final class GoogleBuilder extends Builder {
             public GoogleBuilder() {
                 super(GoogleAuthProvider.PROVIDER_ID);
+            }
+
+            private void validateWebClientId() {
                 Preconditions.checkConfigured(getApplicationContext(),
                         "Check your google-services plugin configuration, the" +
                                 " default_web_client_id string wasn't populated.",
@@ -873,7 +1057,8 @@ public final class AuthUI {
             @NonNull
             public GoogleBuilder setScopes(@NonNull List<String> scopes) {
                 GoogleSignInOptions.Builder builder =
-                        new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN);
+                        new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                .requestEmail();
                 for (String scope : scopes) {
                     builder.requestScopes(new Scope(scope));
                 }
@@ -893,8 +1078,29 @@ public final class AuthUI {
                         ExtraConstants.GOOGLE_SIGN_IN_OPTIONS);
 
                 GoogleSignInOptions.Builder builder = new GoogleSignInOptions.Builder(options);
-                builder.requestEmail().requestIdToken(getApplicationContext()
-                        .getString(R.string.default_web_client_id));
+
+                String clientId = options.getServerClientId();
+                if (clientId == null) {
+                    validateWebClientId();
+                    clientId = getApplicationContext().getString(R.string.default_web_client_id);
+                }
+
+                // Warn the user that they are _probably_ doing the wrong thing if they
+                // have not called requestEmail (see issue #1899 and #1621)
+                boolean hasEmailScope = false;
+                for (Scope s : options.getScopes()) {
+                    if ("email".equals(s.getScopeUri())) {
+                        hasEmailScope = true;
+                        break;
+                    }
+                }
+                if (!hasEmailScope) {
+                    Log.w(TAG, "The GoogleSignInOptions passed to setSignInOptions does not " +
+                            "request the 'email' scope. In most cases this is a mistake! " +
+                            "Call requestEmail() on the GoogleSignInOptions object.");
+                }
+
+                builder.requestIdToken(clientId);
                 getParams().putParcelable(
                         ExtraConstants.GOOGLE_SIGN_IN_OPTIONS, builder.build());
 
@@ -905,7 +1111,8 @@ public final class AuthUI {
             @Override
             public IdpConfig build() {
                 if (!getParams().containsKey(ExtraConstants.GOOGLE_SIGN_IN_OPTIONS)) {
-                    setScopes(Collections.<String>emptyList());
+                    validateWebClientId();
+                    setScopes(Collections.emptyList());
                 }
 
                 return super.build();
@@ -929,7 +1136,9 @@ public final class AuthUI {
                 Preconditions.checkConfigured(getApplicationContext(),
                         "Facebook provider unconfigured. Make sure to add a" +
                                 " `facebook_application_id` string. See the docs for more info:" +
-                                " https://github.com/firebase/FirebaseUI-Android/blob/master/auth/README.md#facebook",
+                                " https://github" +
+                                ".com/firebase/FirebaseUI-Android/blob/master/auth/README" +
+                                ".md#facebook",
                         R.string.facebook_application_id);
                 if (getApplicationContext().getString(R.string.facebook_login_protocol_scheme)
                         .equals("fbYOUR_APP_ID")) {
@@ -951,66 +1160,122 @@ public final class AuthUI {
         }
 
         /**
+         * {@link IdpConfig} builder for the Anonymous provider.
+         */
+        public static final class AnonymousBuilder extends Builder {
+            public AnonymousBuilder() {
+                super(ANONYMOUS_PROVIDER);
+            }
+        }
+
+        /**
          * {@link IdpConfig} builder for the Twitter provider.
          */
-        public static final class TwitterBuilder extends Builder {
+        public static final class TwitterBuilder extends GenericOAuthProviderBuilder {
+            private static final String PROVIDER_NAME = "Twitter";
+
             public TwitterBuilder() {
-                super(TwitterAuthProvider.PROVIDER_ID);
-                if (!ProviderAvailability.IS_TWITTER_AVAILABLE) {
-                    throw new RuntimeException(
-                            "Twitter provider cannot be configured " +
-                                    "without dependency. Did you forget to add " +
-                                    "'com.twitter.sdk.android:twitter-core:VERSION' dependency?");
-                }
-                Preconditions.checkConfigured(getApplicationContext(),
-                        "Twitter provider unconfigured. Make sure to add your key and secret." +
-                                " See the docs for more info:" +
-                                " https://github.com/firebase/FirebaseUI-Android/blob/master/auth/README.md#twitter",
-                        R.string.twitter_consumer_key,
-                        R.string.twitter_consumer_secret);
+                super(TwitterAuthProvider.PROVIDER_ID, PROVIDER_NAME,
+                        R.layout.fui_idp_button_twitter);
             }
         }
 
         /**
          * {@link IdpConfig} builder for the GitHub provider.
          */
-        public static final class GitHubBuilder extends Builder {
+        public static final class GitHubBuilder extends GenericOAuthProviderBuilder {
+            private static final String PROVIDER_NAME = "Github";
+
             public GitHubBuilder() {
-                //noinspection deprecation taking a hit for the backcompat team
-                super(GithubAuthProvider.PROVIDER_ID);
-                if (!ProviderAvailability.IS_GITHUB_AVAILABLE) {
-                    throw new RuntimeException(
-                            "GitHub provider cannot be configured " +
-                                    "without dependency. Did you forget to add " +
-                                    "'com.firebaseui:firebase-ui-auth-github:VERSION' dependency?");
-                }
-                Preconditions.checkConfigured(getApplicationContext(),
-                        "GitHub provider unconfigured. Make sure to add your client id and secret." +
-                                " See the docs for more info:" +
-                                " https://github.com/firebase/FirebaseUI-Android/blob/master/auth/README.md#github",
-                        R.string.firebase_web_host,
-                        R.string.github_client_id,
-                        R.string.github_client_secret);
+                super(GithubAuthProvider.PROVIDER_ID, PROVIDER_NAME,
+                        R.layout.fui_idp_button_github);
             }
 
             /**
-             * Specifies the additional permissions to be requested. Available permissions can be
-             * found <ahref="https://developer.github.com/apps/building-oauth-apps/scopes-for-oauth-apps/#available-scopes">here</a>.
+             * Specifies the additional permissions to be requested.
+             *
+             * <p> Available permissions can be found
+             * <ahref="https://developer.github.com/apps/building-oauth-apps/scopes-for-oauth-apps/#available-scopes">here</a>.
+             *
+             * @deprecated Please use {@link #setScopes(List)} instead.
              */
+            @Deprecated
             @NonNull
             public GitHubBuilder setPermissions(@NonNull List<String> permissions) {
-                getParams().putStringArrayList(
-                        ExtraConstants.GITHUB_PERMISSIONS, new ArrayList<>(permissions));
+                setScopes(permissions);
                 return this;
             }
         }
 
         /**
-         * {@link IdpConfig} builder for the Anonymous provider.
+         * {@link IdpConfig} builder for the Apple provider.
          */
-        public static final class AnonymousBuilder extends Builder {
-            public AnonymousBuilder() {
-                super(ANONYMOUS_PROVIDER);
+        public static final class AppleBuilder extends GenericOAuthProviderBuilder {
+            private static final String PROVIDER_NAME = "Apple";
+
+            public AppleBuilder() {
+                super(APPLE_PROVIDER, PROVIDER_NAME, R.layout.fui_idp_button_apple);
+            }
+        }
+
+        /**
+         * {@link IdpConfig} builder for the Microsoft provider.
+         */
+        public static final class MicrosoftBuilder extends GenericOAuthProviderBuilder {
+            private static final String PROVIDER_NAME = "Microsoft";
+
+            public MicrosoftBuilder() {
+                super(MICROSOFT_PROVIDER, PROVIDER_NAME, R.layout.fui_idp_button_microsoft);
+            }
+        }
+
+        /**
+         * {@link IdpConfig} builder for the Yahoo provider.
+         */
+        public static final class YahooBuilder extends GenericOAuthProviderBuilder {
+            private static final String PROVIDER_NAME = "Yahoo";
+
+            public YahooBuilder() {
+                super(YAHOO_PROVIDER, PROVIDER_NAME, R.layout.fui_idp_button_yahoo);
+            }
+        }
+
+        /**
+         * {@link IdpConfig} builder for a Generic OAuth provider.
+         */
+        public static class GenericOAuthProviderBuilder extends Builder {
+
+            public GenericOAuthProviderBuilder(@NonNull String providerId,
+                                               @NonNull String providerName,
+                                               int buttonId) {
+                super(providerId);
+
+                Preconditions.checkNotNull(providerId, "The provider ID cannot be null.");
+                Preconditions.checkNotNull(providerName, "The provider name cannot be null.");
+
+                getParams().putString(
+                        ExtraConstants.GENERIC_OAUTH_PROVIDER_ID, providerId);
+                getParams().putString(
+                        ExtraConstants.GENERIC_OAUTH_PROVIDER_NAME, providerName);
+                getParams().putInt(
+                        ExtraConstants.GENERIC_OAUTH_BUTTON_ID, buttonId);
+
+            }
+
+            @NonNull
+            public GenericOAuthProviderBuilder setScopes(@NonNull List<String> scopes) {
+                getParams().putStringArrayList(
+                        ExtraConstants.GENERIC_OAUTH_SCOPES, new ArrayList<>(scopes));
+                return this;
+            }
+
+            @NonNull
+            public GenericOAuthProviderBuilder setCustomParameters(
+                    @NonNull Map<String, String> customParameters) {
+                getParams().putSerializable(
+                        ExtraConstants.GENERIC_OAUTH_CUSTOM_PARAMETERS,
+                        new HashMap<>(customParameters));
+                return this;
             }
         }
     }
@@ -1020,13 +1285,18 @@ public final class AuthUI {
      */
     @SuppressWarnings(value = "unchecked")
     private abstract class AuthIntentBuilder<T extends AuthIntentBuilder> {
+        final List<IdpConfig> mProviders = new ArrayList<>();
+        IdpConfig mDefaultProvider = null;
         int mLogo = NO_LOGO;
         int mTheme = getDefaultTheme();
-        final List<IdpConfig> mProviders = new ArrayList<>();
         String mTosUrl;
         String mPrivacyPolicyUrl;
+        boolean mAlwaysShowProviderChoice = false;
+        boolean mLockOrientation = false;
         boolean mEnableCredentials = true;
         boolean mEnableHints = true;
+        AuthMethodPickerLayout mAuthMethodPickerLayout = null;
+        ActionCodeSettings mPasswordSettings = null;
 
         /**
          * Specifies the theme to use for the application flow. If no theme is specified, a
@@ -1088,7 +1358,7 @@ public final class AuthUI {
         }
 
         /**
-         * Specified the set of supported authentication providers. At least one provider must
+         * Specifies the set of supported authentication providers. At least one provider must
          * be specified. There may only be one instance of each provider. Anonymous provider cannot
          * be the only provider specified.
          * <p>
@@ -1097,9 +1367,8 @@ public final class AuthUI {
          *
          * @param idpConfigs a list of {@link IdpConfig}s, where each {@link IdpConfig} contains the
          *                   configuration parameters for the IDP.
-         * @see IdpConfig
-         *
          * @throws IllegalStateException if anonymous provider is the only specified provider.
+         * @see IdpConfig
          */
         @NonNull
         public T setAvailableProviders(@NonNull List<IdpConfig> idpConfigs) {
@@ -1123,6 +1392,29 @@ public final class AuthUI {
                 }
             }
 
+            return (T) this;
+        }
+
+        /**
+         * Specifies the default authentication provider, bypassing the provider selection screen.
+         * The provider here must already be included via {@link #setAvailableProviders(List)}, and
+         * this method is incompatible with {@link #setAlwaysShowSignInMethodScreen(boolean)}.
+         *
+         * @param config the default {@link IdpConfig} to use.
+         */
+        @NonNull
+        public T setDefaultProvider(@Nullable IdpConfig config) {
+            if (config != null) {
+                if (!mProviders.contains(config)) {
+                    throw new IllegalStateException(
+                            "Default provider not in available providers list.");
+                }
+                if (mAlwaysShowProviderChoice) {
+                    throw new IllegalStateException(
+                            "Can't set default provider and always show provider choice.");
+                }
+            }
+            mDefaultProvider = config;
             return (T) this;
         }
 
@@ -1156,6 +1448,61 @@ public final class AuthUI {
             return (T) this;
         }
 
+        /**
+         * Set a custom layout for the AuthMethodPickerActivity screen.
+         * See {@link AuthMethodPickerLayout}.
+         *
+         * @param authMethodPickerLayout custom layout descriptor object.
+         */
+        @NonNull
+        public T setAuthMethodPickerLayout(@NonNull AuthMethodPickerLayout authMethodPickerLayout) {
+            mAuthMethodPickerLayout = authMethodPickerLayout;
+            return (T) this;
+        }
+
+        /**
+         * Forces the sign-in method choice screen to always show, even if there is only
+         * a single provider configured.
+         * <p>
+         * <p>This is false by default.
+         *
+         * @param alwaysShow if true, force the sign-in choice screen to show.
+         */
+        @NonNull
+        public T setAlwaysShowSignInMethodScreen(boolean alwaysShow) {
+            if (alwaysShow && mDefaultProvider != null) {
+                throw new IllegalStateException(
+                        "Can't show provider choice with a default provider.");
+            }
+            mAlwaysShowProviderChoice = alwaysShow;
+            return (T) this;
+        }
+
+        /**
+         * Enable or disables the orientation for small devices to be locked in
+         * Portrait orientation
+         * <p>
+         * <p>This is false by default.
+         *
+         * @param lockOrientation if true, force the activities to be in Portrait orientation.
+         */
+        @NonNull
+        public T setLockOrientation(boolean lockOrientation) {
+            mLockOrientation = lockOrientation;
+            return (T) this;
+        }
+
+        /**
+         * Set custom settings for the RecoverPasswordActivity.
+         *
+         * @param passwordSettings to allow additional state via a continue URL.
+         */
+        @NonNull
+        public T setResetPasswordSettings(ActionCodeSettings passwordSettings) {
+            mPasswordSettings = passwordSettings;
+            return (T) this;
+        }
+
         @CallSuper
         @NonNull
         public Intent build() {
@@ -1174,6 +1521,7 @@ public final class AuthUI {
      */
     public final class SignInIntentBuilder extends AuthIntentBuilder<SignInIntentBuilder> {
 
+        private String mEmailLink;
         private boolean mEnableAnonymousUpgrade;
 
         private SignInIntentBuilder() {
@@ -1181,13 +1529,41 @@ public final class AuthUI {
         }
 
         /**
+         * Specifies the email link to be used for sign in. When set, a sign in attempt will be
+         * made immediately.
+         */
+        @NonNull
+        public SignInIntentBuilder setEmailLink(@NonNull final String emailLink) {
+            mEmailLink = emailLink;
+            return this;
+        }
+
+        /**
          * Enables upgrading anonymous accounts to full accounts during the sign-in flow.
          * This is disabled by default.
+         *
+         * @throws IllegalStateException when you attempt to enable anonymous user upgrade
+         *                               without forcing the same device flow for email link sign in.
          */
         @NonNull
         public SignInIntentBuilder enableAnonymousUsersAutoUpgrade() {
             mEnableAnonymousUpgrade = true;
+            validateEmailBuilderConfig();
             return this;
+        }
+
+        private void validateEmailBuilderConfig() {
+            for (int i = 0; i < mProviders.size(); i++) {
+                IdpConfig config = mProviders.get(i);
+                if (config.getProviderId().equals(EMAIL_LINK_PROVIDER)) {
+                    boolean emailLinkForceSameDevice =
+                            config.getParams().getBoolean(ExtraConstants.FORCE_SAME_DEVICE, true);
+                    if (!emailLinkForceSameDevice) {
+                        throw new IllegalStateException("You must force the same device flow " +
+                                "when using email link sign in with anonymous user upgrade");
+                    }
+                }
+            }
         }
 
         @Override
@@ -1195,13 +1571,19 @@ public final class AuthUI {
             return new FlowParameters(
                     mApp.getName(),
                     mProviders,
+                    mDefaultProvider,
                     mTheme,
                     mLogo,
                     mTosUrl,
                     mPrivacyPolicyUrl,
                     mEnableCredentials,
                     mEnableHints,
-                    mEnableAnonymousUpgrade);
+                    mEnableAnonymousUpgrade,
+                    mAlwaysShowProviderChoice,
+                    mLockOrientation,
+                    mEmailLink,
+                    mPasswordSettings,
+                    mAuthMethodPickerLayout);
         }
     }
 }

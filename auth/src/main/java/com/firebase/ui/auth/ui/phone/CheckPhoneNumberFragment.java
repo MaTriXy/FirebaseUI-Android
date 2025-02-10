@@ -1,13 +1,8 @@
 package com.firebase.ui.auth.ui.phone;
 
-import android.arch.lifecycle.ViewModelProviders;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RestrictTo;
-import android.support.design.widget.TextInputLayout;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -26,8 +21,14 @@ import com.firebase.ui.auth.util.data.PhoneNumberUtils;
 import com.firebase.ui.auth.util.data.PrivacyDisclosureUtils;
 import com.firebase.ui.auth.util.ui.ImeHelper;
 import com.firebase.ui.auth.viewmodel.ResourceObserver;
+import com.google.android.material.textfield.TextInputLayout;
 
 import java.util.Locale;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RestrictTo;
+import androidx.lifecycle.ViewModelProvider;
 
 /**
  * Displays country selector and phone number input form for users
@@ -43,9 +44,11 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
     private ProgressBar mProgressBar;
     private Button mSubmitButton;
     private CountryListSpinner mCountryListSpinner;
+    private View mCountryListAnchor;
     private TextInputLayout mPhoneInputLayout;
     private EditText mPhoneEditText;
     private TextView mSmsTermsText;
+    private TextView mFooterText;
 
 
     public static CheckPhoneNumberFragment newInstance(Bundle params) {
@@ -59,9 +62,9 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        mVerificationHandler = ViewModelProviders.of(requireActivity())
+        mVerificationHandler = new ViewModelProvider(requireActivity())
                 .get(PhoneNumberVerificationHandler.class);
-        mCheckPhoneHandler = ViewModelProviders.of(requireActivity())
+        mCheckPhoneHandler = new ViewModelProvider(this)
                 .get(CheckPhoneHandler.class);
     }
 
@@ -78,9 +81,11 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
         mProgressBar = view.findViewById(R.id.top_progress_bar);
         mSubmitButton = view.findViewById(R.id.send_code);
         mCountryListSpinner = view.findViewById(R.id.country_list);
+        mCountryListAnchor = view.findViewById(R.id.country_list_popup_anchor);
         mPhoneInputLayout = view.findViewById(R.id.phone_layout);
         mPhoneEditText = view.findViewById(R.id.phone_number);
         mSmsTermsText = view.findViewById(R.id.send_sms_tos);
+        mFooterText = view.findViewById(R.id.email_footer_tos_and_pp_text);
 
         mSmsTermsText.setText(getString(R.string.fui_sms_terms_of_service,
                 getString(R.string.fui_verify_phone_number)));
@@ -89,21 +94,17 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
         }
         requireActivity().setTitle(getString(R.string.fui_verify_phone_number_title));
 
-        ImeHelper.setImeOnDoneListener(mPhoneEditText, new ImeHelper.DonePressedListener() {
-            @Override
-            public void onDonePressed() {
-                onNext();
-            }
-        });
+        ImeHelper.setImeOnDoneListener(mPhoneEditText, () -> onNext());
         mSubmitButton.setOnClickListener(this);
 
-        setupPrivacyDisclosures(view.<TextView>findViewById(R.id.email_footer_tos_and_pp_text));
+        setupPrivacyDisclosures();
+        setupCountrySpinner();
     }
 
     @Override
     public void onActivityCreated(@Nullable Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
-        mCheckPhoneHandler.getOperation().observe(this, new ResourceObserver<PhoneNumber>(this) {
+        mCheckPhoneHandler.getOperation().observe(getViewLifecycleOwner(), new ResourceObserver<PhoneNumber>(this) {
             @Override
             protected void onSuccess(@NonNull PhoneNumber number) {
                 start(number);
@@ -115,12 +116,15 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
             }
         });
 
-        if (savedInstanceState != null || mCalled) { return; }
+        if (savedInstanceState != null || mCalled) {
+            return;
+        }
         // Fragment back stacks are the stuff of nightmares (what's new?): the fragment isn't
         // destroyed so its state isn't saved and we have to rely on an instance field. Sigh.
         mCalled = true;
 
-        setupCountrySpinner();
+        // DON'T REMOVE
+        setDefaultCountryForSpinner();
     }
 
     @Override
@@ -154,7 +158,7 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
         if (phoneNumber == null) {
             mPhoneInputLayout.setError(getString(R.string.fui_invalid_phone_number));
         } else {
-            mVerificationHandler.verifyPhoneNumber(phoneNumber, false);
+            mVerificationHandler.verifyPhoneNumber(requireActivity(), phoneNumber, false);
         }
     }
 
@@ -170,17 +174,20 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
                 everythingElse, mCountryListSpinner.getSelectedCountryInfo());
     }
 
-    private void setupPrivacyDisclosures(TextView footerText) {
+    private void setupPrivacyDisclosures() {
         FlowParameters params = getFlowParams();
 
-        if (params.isSingleProviderFlow()) {
+        boolean termsAndPrivacyUrlsProvided = params.isTermsOfServiceUrlProvided()
+                && params.isPrivacyPolicyUrlProvided();
+
+        if (!params.shouldShowProviderChoice() && termsAndPrivacyUrlsProvided) {
             PrivacyDisclosureUtils.setupTermsOfServiceAndPrivacyPolicySmsText(requireContext(),
                     params,
                     mSmsTermsText);
         } else {
             PrivacyDisclosureUtils.setupTermsOfServiceFooter(requireContext(),
                     params,
-                    footerText);
+                    mFooterText);
 
             String verifyText = getString(R.string.fui_verify_phone_number);
             mSmsTermsText.setText(getString(R.string.fui_sms_terms_of_service, verifyText));
@@ -194,17 +201,10 @@ public class CheckPhoneNumberFragment extends FragmentBase implements View.OnCli
 
     private void setupCountrySpinner() {
         Bundle params = getArguments().getBundle(ExtraConstants.PARAMS);
-        mCountryListSpinner.init(params);
-
-        setDefaultCountryForSpinner();
+        mCountryListSpinner.init(params, mCountryListAnchor);
 
         // Clear error when spinner is clicked on
-        mCountryListSpinner.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                mPhoneInputLayout.setError(null);
-            }
-        });
+        mCountryListSpinner.setOnClickListener(v -> mPhoneInputLayout.setError(null));
     }
 
     private void setDefaultCountryForSpinner() {

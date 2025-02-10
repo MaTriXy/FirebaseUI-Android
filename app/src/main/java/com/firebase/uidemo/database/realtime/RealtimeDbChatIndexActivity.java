@@ -1,6 +1,5 @@
 package com.firebase.uidemo.database.realtime;
 
-import android.support.annotation.NonNull;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,6 +11,8 @@ import com.firebase.uidemo.database.ChatHolder;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+
+import androidx.annotation.NonNull;
 
 public class RealtimeDbChatIndexActivity extends RealtimeDbChatActivity {
     private DatabaseReference mChatIndicesRef;
@@ -47,7 +48,7 @@ public class RealtimeDbChatIndexActivity extends RealtimeDbChatActivity {
             @Override
             public void onDataChanged() {
                 // If there are no chat messages, show a view that invites the user to add a message.
-                mEmptyListMessage.setVisibility(getItemCount() == 0 ? View.VISIBLE : View.GONE);
+                findViewById(R.id.emptyTextView).setVisibility(getItemCount() == 0 ? View.VISIBLE : View.GONE);
             }
         };
     }

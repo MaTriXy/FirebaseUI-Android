@@ -1,16 +1,17 @@
 package com.firebase.ui.database;
 
-import android.arch.lifecycle.Lifecycle;
-import android.arch.lifecycle.LifecycleOwner;
-import android.arch.lifecycle.OnLifecycleEvent;
-import android.support.annotation.NonNull;
-import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 
 import com.firebase.ui.common.ChangeEventType;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
+
+import androidx.annotation.NonNull;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.OnLifecycleEvent;
+import androidx.recyclerview.widget.RecyclerView;
 
 /**
  * This class is a generic way of backing a {@link RecyclerView} with a Firebase location. It
@@ -28,17 +29,19 @@ public abstract class FirebaseRecyclerAdapter<T, VH extends RecyclerView.ViewHol
         extends RecyclerView.Adapter<VH> implements FirebaseAdapter<T> {
     private static final String TAG = "FirebaseRecyclerAdapter";
 
-    private final ObservableSnapshotArray<T> mSnapshots;
+    private FirebaseRecyclerOptions<T> mOptions;
+    private ObservableSnapshotArray<T> mSnapshots;
 
     /**
      * Initialize a {@link RecyclerView.Adapter} that listens to a Firebase query. See
      * {@link FirebaseRecyclerOptions} for configuration options.
      */
     public FirebaseRecyclerAdapter(@NonNull FirebaseRecyclerOptions<T> options) {
+        mOptions = options;
         mSnapshots = options.getSnapshots();
 
-        if (options.getOwner() != null) {
-            options.getOwner().getLifecycle().addObserver(this);
+        if (mOptions.getOwner() != null) {
+            mOptions.getOwner().getLifecycle().addObserver(this);
         }
     }
 
@@ -54,7 +57,6 @@ public abstract class FirebaseRecyclerAdapter<T, VH extends RecyclerView.ViewHol
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     public void stopListening() {
         mSnapshots.removeChangeEventListener(this);
-        notifyDataSetChanged();
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -115,6 +117,30 @@ public abstract class FirebaseRecyclerAdapter<T, VH extends RecyclerView.ViewHol
     @Override
     public int getItemCount() {
         return mSnapshots.isListening(this) ? mSnapshots.size() : 0;
+    }
+
+    /**
+     * Re-initialize the Adapter with a new set of options. Can be used to change the query
+     * without re-constructing the entire adapter.
+     */
+    public void updateOptions(@NonNull FirebaseRecyclerOptions<T> options) {
+        // Tear down old options
+        boolean wasListening = mSnapshots.isListening(this);
+        if (mOptions.getOwner() != null) {
+            mOptions.getOwner().getLifecycle().removeObserver(this);
+        }
+        mSnapshots.clear();
+        stopListening();
+
+        // Set up new options
+        mOptions = options;
+        mSnapshots = options.getSnapshots();
+        if (options.getOwner() != null) {
+            options.getOwner().getLifecycle().addObserver(this);
+        }
+        if (wasListening) {
+            startListening();
+        }
     }
 
     @Override
